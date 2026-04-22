@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(echo \"PID=$!\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /tmp/home.html -w \"HTTP %{http_code} | %{size_download} bytes | %{time_total}s\\\\n\" http://localhost:3000/)",
+      "Bash(taskkill //F //FI \"IMAGENAME eq node.exe\" //FI \"WINDOWTITLE eq *\")",
+      "Bash(curl -s -o /dev/null -w \"port 3000: HTTP %{http_code}\\\\n\" --max-time 2 http://localhost:3000/)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 2488)",
+      "Bash(curl -s -o /dev/null -w \"port 3000 after kill: HTTP %{http_code}\\\\n\" --max-time 2 http://localhost:3000/)",
+      "Bash(disown)",
+      "Bash(echo \"started PID=$!\")",
+      "Bash(curl -s -o /tmp/home2.html -w \"HTTP %{http_code} | %{size_download} bytes | %{time_total}s\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /tmp/home3.html -w \"HTTP %{http_code} | %{size_download} bytes\\\\n\" http://localhost:3000/)"
+    ]
+  }
+}

@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Tailwind v4 — paleta oficial do Manual de Identidade Visual
+   Tayah Advogados. Gera utilitários:
+     bg-bordo / text-bordo         → vermelho institucional Pantone 7623 C
+     bg-grey  / text-grey          → cinza Pantone 877 C (secundário)
+     bg-ink   / text-ink           → preto institucional (títulos/corpo)
+     bg-offwhite                   → fundo off-white do site
+     font-sans                     → Lato (única fonte do projeto)
+   ============================================================ */
+@theme {
+  --color-bordo: #9E2A2B;
+  --color-bordo-dark: #7A2021;
+  --color-grey: #8A8D8F;
+  --color-ink: #1A1A1A;
+  --color-offwhite: #FAFAF7;
+
+  --font-sans: var(--font-lato), ui-sans-serif, system-ui, sans-serif;
+
+  /* Animação fade-in usada nas transições entre passos da calculadora */
+  --animate-fade-in: fadeIn 280ms ease-out;
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Scroll suave global (para o CTA do hero → calculadora) */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-offwhite);
+  color: var(--color-ink);
+}
+
+/* Foco visível acessível — usa o vermelho institucional */
+:focus-visible {
+  outline: 2px solid var(--color-bordo);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
