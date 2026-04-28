@@ -14,7 +14,10 @@
       "Bash(disown)",
       "Bash(echo \"started PID=$!\")",
       "Bash(curl -s -o /tmp/home2.html -w \"HTTP %{http_code} | %{size_download} bytes | %{time_total}s\\\\n\" http://localhost:3000/)",
-      "Bash(curl -s -o /tmp/home3.html -w \"HTTP %{http_code} | %{size_download} bytes\\\\n\" http://localhost:3000/)"
+      "Bash(curl -s -o /tmp/home3.html -w \"HTTP %{http_code} | %{size_download} bytes\\\\n\" http://localhost:3000/)",
+      "Bash(npx --no-install tsc --noEmit)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(xargs grep *)"
     ]
   }
 }

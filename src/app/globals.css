@@ -21,6 +21,14 @@
   /* Animação fade-in usada nas transições entre passos da calculadora */
   --animate-fade-in: fadeIn 280ms ease-out;
 
+  /* Slide-up sutil para o texto principal do hero (entrada de 20px). */
+  --animate-slide-up: slideUp 600ms ease-out both;
+
+  /* Slide-left para os cards de "dados duros" do hero. O delay é
+     aplicado via inline style em cada card (300/500/700ms) para
+     escalonar a entrada. */
+  --animate-slide-left: slideLeft 600ms ease-out both;
+
   @keyframes fadeIn {
     from {
       opacity: 0;
@@ -30,6 +38,51 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideLeft {
+    from {
+      opacity: 0;
+      transform: translateX(40px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+}
+
+/* Pulso "neon" para o botão flutuante do WhatsApp.
+   Mantido FORA do @theme e aplicado via `style={{ animation }}` no
+   componente para garantir execução mesmo se houver alguma quirk do
+   Tailwind/Turbopack com utilitários animate-[var(...)] em arbitrary
+   values. A primeira sombra de cada keyframe é uma profundidade
+   estática (substitui shadow-2xl, que competiria pelo box-shadow); as
+   demais formam o anel verde que expande e o glow que pulsa. */
+@keyframes neon-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 10px 25px -5px rgba(0, 0, 0, 0.25),
+      0 0 0 0 rgba(37, 211, 102, 0.7),
+      0 0 20px rgba(37, 211, 102, 0.6);
+  }
+  50% {
+    box-shadow:
+      0 10px 25px -5px rgba(0, 0, 0, 0.25),
+      0 0 0 16px rgba(37, 211, 102, 0),
+      0 0 36px rgba(37, 211, 102, 0.95);
   }
 }
 

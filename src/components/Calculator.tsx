@@ -16,18 +16,16 @@
 
 import { useState, useId, useMemo } from "react";
 import {
-  calcularDiagnostico,
   type DadosCalculadora,
-  type Diagnostico,
   type TipoPlano,
 } from "@/lib/calculator";
-
-// ============================================================
-// WhatsApp INSTITUCIONAL do escritório Tayah Advogados.
-// Formato internacional E.164 sem o "+" (só dígitos). Este número
-// está declarado no Manual de Identidade Visual do escritório.
-// ============================================================
-const WHATSAPP_TAYAH = "5521995322222";
+import {
+  calcularResultadoPublico,
+  formatMoedaBR,
+  formatPctBR,
+  type ResultadoPublico,
+} from "@/lib/calculator-publica";
+import { WHATSAPP_TAYAH } from "@/lib/contato";
 
 const OPERADORAS = [
   "Amil",
@@ -74,7 +72,7 @@ const TOTAL_PASSOS = 8;
 export default function Calculator() {
   const [passo, setPasso] = useState(1);
   const [dados, setDados] = useState<EstadoForm>(ESTADO_INICIAL);
-  const [resultado, setResultado] = useState<Diagnostico | null>(null);
+  const [resultado, setResultado] = useState<ResultadoPublico | null>(null);
 
   // Atualiza um campo do estado (imutável).
   function atualizar<K extends keyof EstadoForm>(
@@ -131,9 +129,9 @@ export default function Calculator() {
     if (passo < TOTAL_PASSOS) {
       setPasso(passo + 1);
     } else {
-      // Último passo: calcular diagnóstico e exibir resultado.
-      const diag = calcularDiagnostico(dados as DadosCalculadora);
-      setResultado(diag);
+      // Último passo: calcular resultado completo (diagnóstico + valores em R$).
+      const res = calcularResultadoPublico(dados as DadosCalculadora);
+      setResultado(res);
     }
   }
 
@@ -151,7 +149,7 @@ export default function Calculator() {
   if (resultado) {
     return (
       <TelaResultado
-        diagnostico={resultado}
+        resultado={resultado}
         dados={dados as DadosCalculadora & { nome: string }}
         onReiniciar={reiniciar}
       />
@@ -732,20 +730,18 @@ function Passo8CapturaLead({
    Tela de resultado — semáforo, sinalizações, CTAs
    ============================================================ */
 function TelaResultado({
-  diagnostico,
+  resultado,
   dados,
   onReiniciar,
 }: {
-  diagnostico: Diagnostico;
+  resultado: ResultadoPublico;
   dados: DadosCalculadora & { nome?: string };
   onReiniciar: () => void;
 }) {
-  const { nivel, sinalizacoes } = diagnostico;
+  const { nivel, sinalizacoes } = resultado;
+  const [verDetalhes, setVerDetalhes] = useState(false);
 
-  // Mapa de apresentação por nível. As cores do semáforo seguem a
-  // convenção visual pedida (🟥/🟨/🟦 via emoji), mas os badges usam
-  // a paleta institucional: vermelho Tayah para "forte", amarelo
-  // com texto preto para "moderado", preto para "fraco".
+  // Mapa de apresentação por nível.
   const apresentacao = {
     forte: {
       emoji: "🟥",
@@ -764,11 +760,11 @@ function TelaResultado({
     },
   }[nivel];
 
-  // Monta mensagem pré-preenchida para o WhatsApp — tom institucional,
-  // sem nome de pessoa física.
+  // Mensagem pré-preenchida para o WhatsApp do CTA principal.
+  // Inclui o valor estimado para já abrir a conversa com contexto.
   const mensagemWpp = useMemo(() => {
     const linhas = [
-      `Olá! Acabei de fazer a calculadora no site do Tayah Advogados e gostaria de conversar sobre o meu caso.`,
+      `Olá! Acabei de fazer a calculadora no site do Tayah Advogados e gostaria de confirmar o valor exato em consulta.`,
       ``,
       `Meu nome é ${dados.nome ?? "..."}.`,
       `O resultado indicou indícios *${apresentacao.titulo}* de abusividade.`,
@@ -778,14 +774,17 @@ function TelaResultado({
       `• Operadora: ${dados.operadora}`,
       `• Último reajuste: ${dados.reajustePercentual}%`,
       `• Data do reajuste: ${String(dados.mesReajuste).padStart(2, "0")}/${dados.anoReajuste}`,
+      `• Diferença mensal estimada: ${formatMoedaBR(resultado.diferencaMensal)}`,
+      `• Total acumulado estimado (${resultado.mesesConsiderados} meses): ${formatMoedaBR(resultado.totalAcumulado36meses)}`,
     ];
     return encodeURIComponent(linhas.join("\n"));
-  }, [dados, apresentacao.titulo]);
+  }, [dados, apresentacao.titulo, resultado]);
 
   const linkWpp = `https://wa.me/${WHATSAPP_TAYAH}?text=${mensagemWpp}`;
 
   return (
-    <div className="w-full max-w-2xl mx-auto animate-[var(--animate-fade-in)]">
+    <div className="w-full max-w-2xl mx-auto animate-[var(--animate-fade-in)] space-y-6">
+      {/* (A) Semáforo + diagnóstico textual */}
       <div className="rounded-lg bg-white border border-grey/30 p-6 md:p-8 shadow-sm">
         <div className="flex items-start gap-4 mb-6">
           <div className="text-5xl md:text-6xl leading-none" aria-hidden="true">
@@ -807,7 +806,7 @@ function TelaResultado({
         <h3 className="text-sm font-bold uppercase tracking-wider text-grey mb-3">
           Sinalizações detectadas
         </h3>
-        <ul className="space-y-3 mb-6">
+        <ul className="space-y-3">
           {sinalizacoes.map((s, i) => (
             <li key={i} className="flex gap-3">
               <span className="text-bordo font-bold leading-6" aria-hidden="true">
@@ -817,31 +816,164 @@ function TelaResultado({
             </li>
           ))}
         </ul>
+      </div>
 
-        <p className="text-xs text-grey border-l-2 border-grey/40 pl-3 italic mb-6">
-          Este diagnóstico é preliminar. A análise conclusiva depende de
-          avaliação individual do contrato por advogado.
-        </p>
+      {/* (B) Bloco "Valor Estimado de Diferença Paga a Maior" */}
+      <div className="rounded-lg bg-[#F5E6E6] border-2 border-bordo p-6 md:p-8 shadow-sm">
+        <h3 className="font-black text-lg md:text-xl text-ink mb-6 text-center">
+          Valor Estimado de Diferença Paga a Maior
+        </h3>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <a
-            href={linkWpp}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 text-center px-5 py-4 rounded-md bg-bordo text-white font-bold uppercase tracking-wide text-sm shadow-sm transition-colors hover:bg-bordo-dark"
-          >
-            Conversar pelo WhatsApp
-          </a>
+        <div className="space-y-6 text-center">
+          <div>
+            <p className="text-[11px] md:text-xs uppercase tracking-[0.18em] font-bold text-grey">
+              Total acumulado estimado ({resultado.mesesConsiderados} mes
+              {resultado.mesesConsiderados === 1 ? "" : "es"} · limite
+              trienal Tema 610/STJ)
+            </p>
+            <p className="font-black text-bordo text-[36px] md:text-[48px] leading-none mt-2">
+              {formatMoedaBR(resultado.totalAcumulado36meses)}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-[11px] md:text-xs uppercase tracking-[0.18em] font-bold text-grey">
+              Reajuste excessivo acumulado
+            </p>
+            <p className="font-bold text-grey text-[28px] md:text-[32px] leading-none mt-2">
+              {formatPctBR(resultado.reajusteExcessivoPercent)}
+            </p>
+          </div>
+
+          <div>
+            <p className="text-[11px] md:text-xs uppercase tracking-[0.18em] font-bold text-grey">
+              Diferença mensal estimada hoje
+            </p>
+            <p className="font-bold text-ink text-[20px] md:text-[24px] leading-none mt-2">
+              {formatMoedaBR(resultado.diferencaMensal)}
+              <span className="text-base font-normal text-grey">/mês</span>
+            </p>
+          </div>
+        </div>
+
+        {/* (C) Accordion mês a mês */}
+        <div className="mt-6">
           <button
             type="button"
-            onClick={onReiniciar}
-            className="flex-1 px-5 py-4 rounded-md border-2 border-ink text-ink font-bold uppercase tracking-wide text-sm transition-colors hover:bg-ink hover:text-offwhite"
+            onClick={() => setVerDetalhes((v) => !v)}
+            aria-expanded={verDetalhes}
+            className="w-full flex items-center justify-between bg-white rounded-md px-4 py-3 text-left font-bold text-ink hover:bg-bordo/5 transition-colors border border-bordo/30"
           >
-            Refazer análise
+            <span>
+              {verDetalhes ? "▼" : "▶️"} Ver detalhes mês a mês
+            </span>
+            <span className="text-xs text-grey font-normal uppercase tracking-wider">
+              {resultado.detalhesMensais.length} linha
+              {resultado.detalhesMensais.length === 1 ? "" : "s"}
+            </span>
           </button>
+
+          {verDetalhes && (
+            <div className="mt-3 bg-white rounded-md border border-bordo/20 overflow-x-auto">
+              {resultado.detalhesMensais.length === 0 ? (
+                <p className="text-center text-grey italic py-6 text-sm">
+                  Reajuste informado no futuro — sem competências para
+                  comparar ainda.
+                </p>
+              ) : (
+                <table className="w-full text-sm border-collapse min-w-[440px]">
+                  <thead className="bg-bordo text-white">
+                    <tr>
+                      <ThR>Mês/Ano</ThR>
+                      <ThR>Mensalidade Cobrada</ThR>
+                      <ThR>Mensalidade Devida (estimativa)</ThR>
+                      <ThR>Diferença</ThR>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultado.detalhesMensais.map((d, i) => (
+                      <tr
+                        key={`${d.ano}-${d.mes}`}
+                        className={i % 2 === 0 ? "bg-white" : "bg-offwhite"}
+                      >
+                        <TdR>{d.rotulo}</TdR>
+                        <TdR>{formatMoedaBR(d.cobrada)}</TdR>
+                        <TdR>{formatMoedaBR(d.devida)}</TdR>
+                        <TdR className="font-bold text-bordo">
+                          {formatMoedaBR(d.diferenca)}
+                        </TdR>
+                      </tr>
+                    ))}
+                    <tr className="bg-[#F5E6E6] font-bold text-bordo">
+                      <TdR colSpan={3} className="text-right">
+                        TOTAL
+                      </TdR>
+                      <TdR>
+                        {formatMoedaBR(resultado.totalAcumulado36meses)}
+                      </TdR>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* (D) CTA principal — verde WhatsApp */}
+      <div>
+        <a
+          href={linkWpp}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block text-center px-6 py-5 rounded-md bg-[#25D366] text-white font-bold text-base md:text-lg shadow-md hover:bg-[#20bd5a] transition-colors"
+        >
+          Confirmar o valor exato em consulta com a equipe Tayah →
+        </a>
+        <p className="mt-2 text-[13px] text-grey text-center">
+          Análise definitiva exige avaliação documental. Sem custo, sem
+          compromisso.
+        </p>
+      </div>
+
+      {/* (E) CTA secundário — refazer */}
+      <div className="text-center">
+        <button
+          type="button"
+          onClick={onReiniciar}
+          className="text-sm font-bold text-grey hover:text-bordo underline-offset-4 hover:underline transition-colors"
+        >
+          Refazer análise
+        </button>
+      </div>
     </div>
+  );
+}
+
+function ThR({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider">
+      {children}
+    </th>
+  );
+}
+
+function TdR({
+  children,
+  className = "",
+  colSpan,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  colSpan?: number;
+}) {
+  return (
+    <td
+      colSpan={colSpan}
+      className={`px-3 py-2.5 align-middle border-b border-grey/15 ${className}`}
+    >
+      {children}
+    </td>
   );
 }
 

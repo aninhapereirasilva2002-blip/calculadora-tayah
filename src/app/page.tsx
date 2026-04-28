@@ -8,6 +8,7 @@ import PainSection from "@/components/PainSection";
 import FAQ from "@/components/FAQ";
 import Footer from "@/components/Footer";
 import Calculator from "@/components/Calculator";
+import WhatsAppFloat from "@/components/WhatsAppFloat";
 
 export default function Home() {
   return (
@@ -41,6 +42,9 @@ export default function Home() {
 
       <FAQ />
       <Footer />
+
+      {/* Botão flutuante: fixo, visível em qualquer scroll. */}
+      <WhatsAppFloat />
     </>
   );
 }
