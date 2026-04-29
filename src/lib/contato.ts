@@ -5,7 +5,7 @@
 
 // WhatsApp INSTITUCIONAL do escritório Tayah Advogados.
 // Formato internacional E.164 sem o "+" (só dígitos).
-export const WHATSAPP_TAYAH = "5521995322222";
+export const WHATSAPP_TAYAH = "5521998917757";
 
 // Mensagem usada pelo botão flutuante (visitante anônimo, sem contexto).
 export const MENSAGEM_FLUTUANTE_PADRAO =
