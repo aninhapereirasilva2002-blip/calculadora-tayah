@@ -14,7 +14,7 @@
  *  - offwhite #FAFAF7 → fundo geral
  */
 
-import { useState, useId, useMemo } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import {
   type DadosCalculadora,
   type TipoPlano,
@@ -124,15 +124,28 @@ export default function Calculator() {
     }
   }, [passo, dados]);
 
+  // Guarda contra duplo-disparo da notificação de lead (Sprint 7).
+  // O ref é resetado no `reiniciar()` para que um novo preenchimento
+  // depois de "Refazer análise" também notifique.
+  const leadEnviadoRef = useRef(false);
+
   function avancar() {
     if (!podeAvancar) return;
     if (passo < TOTAL_PASSOS) {
       setPasso(passo + 1);
-    } else {
-      // Último passo: calcular resultado completo (diagnóstico + valores em R$).
-      const res = calcularResultadoPublico(dados as DadosCalculadora);
-      setResultado(res);
+      return;
     }
+    // Último passo: calcular resultado completo (diagnóstico + valores em R$).
+    const res = calcularResultadoPublico(dados as DadosCalculadora);
+    // Disparo da notificação por email (fire-and-forget).
+    // A UX do cliente NÃO depende dessa chamada — falhas só vão pro console.
+    if (!leadEnviadoRef.current) {
+      leadEnviadoRef.current = true;
+      enviarLead(dados, res).catch((err) => {
+        console.error("Falha ao notificar lead:", err);
+      });
+    }
+    setResultado(res);
   }
 
   function voltar() {
@@ -143,6 +156,7 @@ export default function Calculator() {
     setDados(ESTADO_INICIAL);
     setResultado(null);
     setPasso(1);
+    leadEnviadoRef.current = false;
   }
 
   // "Voltar" do dashboard volta ao último passo do formulário (captura
@@ -1249,5 +1263,65 @@ function rotuloTipo(t: TipoPlano): string {
       return "Coletivo Empresarial";
     case "nao_sei":
       return "Não informado";
+  }
+}
+
+/**
+ * Envia o preenchimento da calculadora para /api/lead, que dispara
+ * uma notificação por email para o time. Fire-and-forget: a tela de
+ * resultado é exibida independentemente do retorno; falhas só vão
+ * pro console (não bloqueiam a UX do cliente).
+ *
+ * Usa `valorRevisaoTotal` (= diferença mensal × 36) como
+ * "valorEstimado em 36 meses" no payload — bate com o card REVISÃO
+ * TOTAL do dashboard.
+ */
+async function enviarLead(
+  form: EstadoForm,
+  resultado: ResultadoPublico,
+): Promise<void> {
+  const payload = {
+    nome: form.nome ?? "",
+    email: form.email ?? "",
+    whatsapp: form.whatsapp ?? "",
+    tipoPlano: form.tipoPlano ? rotuloTipo(form.tipoPlano) : "—",
+    operadora: form.operadora ?? "—",
+    mensalidade: typeof form.mensalidade === "number" ? form.mensalidade : 0,
+    reajuste:
+      typeof form.reajustePercentual === "number"
+        ? form.reajustePercentual
+        : 0,
+    mesAno:
+      form.mesReajuste && form.anoReajuste
+        ? `${String(form.mesReajuste).padStart(2, "0")}/${form.anoReajuste}`
+        : "—",
+    idade:
+      typeof form.idadeTitular === "number" ? form.idadeTitular : 0,
+    anoContratacao:
+      typeof form.anoContratacao === "number" ? form.anoContratacao : 0,
+    diagnostico: {
+      nivel: resultado.nivel,
+      sinalizacoes: resultado.sinalizacoes,
+      valorEstimado: resultado.valorRevisaoTotal,
+    },
+  };
+
+  console.log("[LEAD] Enviando para /api/lead:", payload);
+  try {
+    const res = await fetch("/api/lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      // Mantém pendente mesmo se a aba ficar em background.
+      keepalive: true,
+    });
+    console.log("[LEAD] Resposta:", res.status);
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`POST /api/lead falhou (${res.status}): ${txt}`);
+    }
+  } catch (error) {
+    console.error("[LEAD] Erro ao enviar:", error);
+    throw error;
   }
 }
