@@ -5,10 +5,19 @@
  * dependência de React, DOM ou rede, para ficar testável e reutilizável.
  */
 
-// Tetos oficiais de reajuste da ANS para planos individuais/familiares,
-// por período maio-abril. Fonte: reajustes anuais publicados pela ANS.
-// (Mantido como dado embarcado; atualizar quando houver novo teto.)
+// Tetos oficiais de reajuste da ANS para planos individuais/familiares.
+// A chave é o ANO DE INÍCIO da vigência (cada teto vale de mai/X a abr/X+1).
+// Ex.: 2024 → vigência mai/2024 a abr/2025 → teto 6,91%.
+// Fonte: reajustes anuais publicados pela ANS. Atualizar quando houver
+// novo teto. Para o lookup correto a partir de (mês, ano) do reajuste,
+// use tetoAnsParaPeriodo() em calculator-publica.ts.
 export const TETOS_ANS: Record<number, number> = {
+  2015: 13.55,
+  2016: 13.57,
+  2017: 13.55,
+  2018: 10.0,
+  2019: 7.35,
+  2020: 8.14,
   2021: -8.19,
   2022: 15.5,
   2023: 9.63,

@@ -17,7 +17,8 @@
       "Bash(curl -s -o /tmp/home3.html -w \"HTTP %{http_code} | %{size_download} bytes\\\\n\" http://localhost:3000/)",
       "Bash(npx --no-install tsc --noEmit)",
       "Bash(taskkill //F //IM node.exe)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(git add *)"
     ]
   }
 }

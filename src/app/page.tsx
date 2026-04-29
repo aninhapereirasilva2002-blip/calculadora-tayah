@@ -4,8 +4,6 @@
  */
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
-import PainSection from "@/components/PainSection";
-import FAQ from "@/components/FAQ";
 import Footer from "@/components/Footer";
 import Calculator from "@/components/Calculator";
 import WhatsAppFloat from "@/components/WhatsAppFloat";
@@ -15,7 +13,6 @@ export default function Home() {
     <>
       <Header />
       <Hero />
-      <PainSection />
 
       {/* Calculadora — ID âncora usado pelo CTA do hero. */}
       <section
@@ -40,7 +37,6 @@ export default function Home() {
         </div>
       </section>
 
-      <FAQ />
       <Footer />
 
       {/* Botão flutuante: fixo, visível em qualquer scroll. */}

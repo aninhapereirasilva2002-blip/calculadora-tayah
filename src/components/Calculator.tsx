@@ -145,6 +145,12 @@ export default function Calculator() {
     setPasso(1);
   }
 
+  // "Voltar" do dashboard volta ao último passo do formulário (captura
+  // de lead) preservando o que foi preenchido — diferente de reiniciar.
+  function voltarParaUltimoPasso() {
+    setResultado(null);
+  }
+
   // -------- Renderização --------
   if (resultado) {
     return (
@@ -152,6 +158,7 @@ export default function Calculator() {
         resultado={resultado}
         dados={dados as DadosCalculadora & { nome: string }}
         onReiniciar={reiniciar}
+        onVoltar={voltarParaUltimoPasso}
       />
     );
   }
@@ -727,224 +734,430 @@ function Passo8CapturaLead({
 }
 
 /* ============================================================
-   Tela de resultado — semáforo, sinalizações, CTAs
+   Tela de resultado — dashboard estilo "planilha técnica" (Sprint 5).
+   Cards agregados no topo + restituição em destaque + tabs (tabela
+   mensal e cálculo do indébito) + CTA. Toda a regra está em
+   calculator-publica.ts; aqui é só apresentação.
    ============================================================ */
 function TelaResultado({
   resultado,
   dados,
   onReiniciar,
+  onVoltar,
 }: {
   resultado: ResultadoPublico;
   dados: DadosCalculadora & { nome?: string };
   onReiniciar: () => void;
+  onVoltar: () => void;
 }) {
-  const { nivel, sinalizacoes } = resultado;
-  const [verDetalhes, setVerDetalhes] = useState(false);
+  const [tabAtiva, setTabAtiva] = useState<"tabela" | "calculo">("tabela");
 
-  // Mapa de apresentação por nível.
-  const apresentacao = {
-    forte: {
-      emoji: "🟥",
-      titulo: "fortes",
-      badge: "bg-bordo text-white",
-    },
-    moderado: {
-      emoji: "🟨",
-      titulo: "moderados",
-      badge: "bg-yellow-500 text-ink",
-    },
-    fraco: {
-      emoji: "🟦",
-      titulo: "fracos",
-      badge: "bg-ink text-offwhite",
-    },
-  }[nivel];
-
-  // Mensagem pré-preenchida para o WhatsApp do CTA principal.
-  // Inclui o valor estimado para já abrir a conversa com contexto.
+  // Mensagem pré-preenchida para o WhatsApp do CTA final.
   const mensagemWpp = useMemo(() => {
     const linhas = [
-      `Olá! Acabei de fazer a calculadora no site do Tayah Advogados e gostaria de confirmar o valor exato em consulta.`,
+      `Olá! Acabei de fazer a calculadora no site do Tayah Advogados e gostaria de confirmar esses cálculos com a equipe.`,
       ``,
       `Meu nome é ${dados.nome ?? "..."}.`,
-      `O resultado indicou indícios *${apresentacao.titulo}* de abusividade.`,
+      `Status do meu caso: *${resultado.status}*.`,
       ``,
-      `Dados do meu caso:`,
+      `Dados do caso:`,
       `• Tipo de plano: ${rotuloTipo(dados.tipoPlano)}`,
       `• Operadora: ${dados.operadora}`,
       `• Último reajuste: ${dados.reajustePercentual}%`,
       `• Data do reajuste: ${String(dados.mesReajuste).padStart(2, "0")}/${dados.anoReajuste}`,
       `• Diferença mensal estimada: ${formatMoedaBR(resultado.diferencaMensal)}`,
-      `• Total acumulado estimado (${resultado.mesesConsiderados} meses): ${formatMoedaBR(resultado.totalAcumulado36meses)}`,
+      `• Restituição trienal estimada: ${formatMoedaBR(resultado.valorRestituicaoTrienal)} (${resultado.numMesesRestituicao} meses)`,
     ];
     return encodeURIComponent(linhas.join("\n"));
-  }, [dados, apresentacao.titulo, resultado]);
+  }, [dados, resultado]);
 
   const linkWpp = `https://wa.me/${WHATSAPP_TAYAH}?text=${mensagemWpp}`;
 
+  const labelPermitido =
+    resultado.tipoReferencia === "ANS"
+      ? "% Permitido (ANS)"
+      : "% Permitido (referência)";
+
+  function gerarPDF() {
+    if (typeof window !== "undefined") {
+      window.alert("Função em breve.");
+    }
+  }
+
+  // Cor do número do card de status conforme nível.
+  const corStatus =
+    resultado.status === "Abusivo"
+      ? "text-bordo"
+      : resultado.status === "Moderado"
+        ? "text-[#D97706]"
+        : "text-emerald-700";
+
   return (
-    <div className="w-full max-w-2xl mx-auto animate-[var(--animate-fade-in)] space-y-6">
-      {/* (A) Semáforo + diagnóstico textual */}
-      <div className="rounded-lg bg-white border border-grey/30 p-6 md:p-8 shadow-sm">
-        <div className="flex items-start gap-4 mb-6">
-          <div className="text-5xl md:text-6xl leading-none" aria-hidden="true">
-            {apresentacao.emoji}
-          </div>
-          <div>
-            <span
-              className={`inline-block text-xs font-bold uppercase tracking-wider px-2 py-1 rounded ${apresentacao.badge}`}
-            >
-              Nível {nivel}
-            </span>
-            <h2 className="font-black text-2xl md:text-3xl text-ink mt-2 leading-tight">
-              Detectamos indícios {apresentacao.titulo} de abusividade no seu
-              caso.
-            </h2>
-          </div>
-        </div>
-
-        <h3 className="text-sm font-bold uppercase tracking-wider text-grey mb-3">
-          Sinalizações detectadas
-        </h3>
-        <ul className="space-y-3">
-          {sinalizacoes.map((s, i) => (
-            <li key={i} className="flex gap-3">
-              <span className="text-bordo font-bold leading-6" aria-hidden="true">
-                •
-              </span>
-              <span className="text-ink leading-6">{s}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* (B) Bloco "Valor Estimado de Diferença Paga a Maior" */}
-      <div className="rounded-lg bg-[#F5E6E6] border-2 border-bordo p-6 md:p-8 shadow-sm">
-        <h3 className="font-black text-lg md:text-xl text-ink mb-6 text-center">
-          Valor Estimado de Diferença Paga a Maior
-        </h3>
-
-        <div className="space-y-6 text-center">
-          <div>
-            <p className="text-[11px] md:text-xs uppercase tracking-[0.18em] font-bold text-grey">
-              Total acumulado estimado ({resultado.mesesConsiderados} mes
-              {resultado.mesesConsiderados === 1 ? "" : "es"} · limite
-              trienal Tema 610/STJ)
-            </p>
-            <p className="font-black text-bordo text-[36px] md:text-[48px] leading-none mt-2">
-              {formatMoedaBR(resultado.totalAcumulado36meses)}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-[11px] md:text-xs uppercase tracking-[0.18em] font-bold text-grey">
-              Reajuste excessivo acumulado
-            </p>
-            <p className="font-bold text-grey text-[28px] md:text-[32px] leading-none mt-2">
-              {formatPctBR(resultado.reajusteExcessivoPercent)}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-[11px] md:text-xs uppercase tracking-[0.18em] font-bold text-grey">
-              Diferença mensal estimada hoje
-            </p>
-            <p className="font-bold text-ink text-[20px] md:text-[24px] leading-none mt-2">
-              {formatMoedaBR(resultado.diferencaMensal)}
-              <span className="text-base font-normal text-grey">/mês</span>
-            </p>
-          </div>
-        </div>
-
-        {/* (C) Accordion mês a mês */}
-        <div className="mt-6">
+    <div className="w-full max-w-[1100px] mx-auto bg-offwhite animate-[var(--animate-fade-in)] space-y-4 md:space-y-6">
+      {/* ─── BLOCO 1 — Barra de ações ─── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setVerDetalhes((v) => !v)}
-            aria-expanded={verDetalhes}
-            className="w-full flex items-center justify-between bg-white rounded-md px-4 py-3 text-left font-bold text-ink hover:bg-bordo/5 transition-colors border border-bordo/30"
+            onClick={onVoltar}
+            className="px-4 py-2 rounded-md border border-grey/40 text-ink text-sm font-bold hover:bg-grey/5 transition-colors"
           >
-            <span>
-              {verDetalhes ? "▼" : "▶️"} Ver detalhes mês a mês
-            </span>
-            <span className="text-xs text-grey font-normal uppercase tracking-wider">
-              {resultado.detalhesMensais.length} linha
-              {resultado.detalhesMensais.length === 1 ? "" : "s"}
-            </span>
+            ← Voltar
           </button>
+          <button
+            type="button"
+            onClick={onReiniciar}
+            className="px-4 py-2 rounded-md border border-grey/40 text-ink text-sm font-bold hover:bg-grey/5 transition-colors"
+          >
+            ↻ Novo Cálculo
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={gerarPDF}
+          className="px-5 py-2.5 rounded-md bg-bordo text-white text-sm font-bold hover:bg-bordo-dark transition-colors"
+        >
+          📄 Gerar Relatório PDF
+        </button>
+      </div>
 
-          {verDetalhes && (
-            <div className="mt-3 bg-white rounded-md border border-bordo/20 overflow-x-auto">
-              {resultado.detalhesMensais.length === 0 ? (
-                <p className="text-center text-grey italic py-6 text-sm">
-                  Reajuste informado no futuro — sem competências para
-                  comparar ainda.
+      {/* ─── BLOCO 2 — 4 cards agregados ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <CardTopo
+          rotulo="TOTAL PAGO"
+          icone="$"
+          valor={formatMoedaBR(resultado.valorTotalPago)}
+          subtitulo="Soma de todas as mensalidades cobradas"
+        />
+        <CardTopo
+          rotulo="TOTAL DEVIDO"
+          icone="$"
+          valor={formatMoedaBR(resultado.valorTotalDevido)}
+          subtitulo="Valor correto com índices permitidos"
+        />
+        <CardTopo
+          rotulo="REVISÃO TOTAL"
+          icone="⚖️"
+          valor={formatMoedaBR(resultado.valorRevisaoTotal)}
+          subtitulo="Diferença no período completo de revisão"
+          corValor="text-[#D97706]"
+          bordaEsquerda="border-l-4 border-[#D97706]"
+        />
+        <CardTopo
+          rotulo="STATUS"
+          icone="⚠️"
+          valor={resultado.status}
+          subtitulo={`${resultado.numReajustesAbusivos} reajuste${
+            resultado.numReajustesAbusivos === 1 ? "" : "s"
+          } abusivo${resultado.numReajustesAbusivos === 1 ? "" : "s"}`}
+          corValor={corStatus}
+          bordaEsquerda="border-l-4 border-bordo"
+        />
+      </div>
+
+      {/* ─── BLOCO 3 — Restituição em destaque ─── */}
+      <div className="rounded-xl bg-[#FFF1F1] border border-bordo/60 p-6 md:p-8 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-center">
+          <div className="md:col-span-3 flex items-start gap-5">
+            <div
+              className="text-5xl md:text-6xl leading-none"
+              aria-hidden="true"
+            >
+              📅
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-grey">
+                Restituição (3 anos)
+              </p>
+              <p className="font-black text-bordo text-[32px] md:text-[48px] leading-none mt-2">
+                {formatMoedaBR(resultado.valorRestituicaoTrienal)}
+              </p>
+              <p className="mt-2 text-sm text-grey">
+                Desde {resultado.mesInicioRestituicao} (
+                {resultado.numMesesRestituicao} mes
+                {resultado.numMesesRestituicao === 1 ? "" : "es"})
+              </p>
+            </div>
+          </div>
+          <div className="md:col-span-2 md:text-right text-sm text-grey leading-relaxed">
+            <p className="font-bold text-ink">Prazo prescricional trienal</p>
+            <p>Art. 206, §3º, V do Código Civil</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── BLOCO 4 — Tabs (tabela / cálculo) ─── */}
+      <div>
+        <div className="flex border-b border-grey/30">
+          <TabBotao
+            ativa={tabAtiva === "tabela"}
+            onClick={() => setTabAtiva("tabela")}
+            label="📊 Tabela Comparativa"
+          />
+          <TabBotao
+            ativa={tabAtiva === "calculo"}
+            onClick={() => setTabAtiva("calculo")}
+            label="🧮 Cálculo do Indébito"
+          />
+        </div>
+
+        {tabAtiva === "tabela" ? (
+          <div className="bg-white rounded-b-xl border border-t-0 border-grey/30 p-5 md:p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+              <div>
+                <h3 className="font-black text-lg md:text-xl text-ink">
+                  Tabela Comparativa Mês a Mês
+                </h3>
+                <p className="text-sm text-grey">
+                  Recálculo histórico do contrato
                 </p>
-              ) : (
-                <table className="w-full text-sm border-collapse min-w-[440px]">
-                  <thead className="bg-bordo text-white">
+              </div>
+              <span className="inline-flex items-center px-3 py-1.5 rounded-md bg-bordo text-white text-xs font-bold uppercase tracking-wider">
+                {resultado.numReajustesAbusivos} reajuste
+                {resultado.numReajustesAbusivos === 1 ? "" : "s"} abusivo
+                {resultado.numReajustesAbusivos === 1 ? "" : "s"} detectado
+                {resultado.numReajustesAbusivos === 1 ? "" : "s"}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              {/* sombra interna inferior sugere "tem mais embaixo" */}
+              <div className="max-h-[600px] overflow-y-auto rounded-md border border-grey/20 [box-shadow:inset_0_-12px_12px_-12px_rgba(0,0,0,0.15)]">
+                <table className="w-full text-sm border-collapse min-w-[820px]">
+                  <thead className="bg-bordo text-white sticky top-0 z-10">
                     <tr>
                       <ThR>Mês/Ano</ThR>
-                      <ThR>Mensalidade Cobrada</ThR>
-                      <ThR>Mensalidade Devida (estimativa)</ThR>
-                      <ThR>Diferença</ThR>
+                      <ThR>Valor Cobrado</ThR>
+                      <ThR>Valor Devido</ThR>
+                      <ThR>% Aplicado</ThR>
+                      <ThR>{labelPermitido}</ThR>
+                      <ThR>Dif. Mensal</ThR>
+                      <ThR>Dif. Acumulada</ThR>
+                      <ThR>Status</ThR>
                     </tr>
                   </thead>
                   <tbody>
-                    {resultado.detalhesMensais.map((d, i) => (
-                      <tr
-                        key={`${d.ano}-${d.mes}`}
-                        className={i % 2 === 0 ? "bg-white" : "bg-offwhite"}
-                      >
-                        <TdR>{d.rotulo}</TdR>
-                        <TdR>{formatMoedaBR(d.cobrada)}</TdR>
-                        <TdR>{formatMoedaBR(d.devida)}</TdR>
-                        <TdR className="font-bold text-bordo">
-                          {formatMoedaBR(d.diferenca)}
-                        </TdR>
-                      </tr>
-                    ))}
-                    <tr className="bg-[#F5E6E6] font-bold text-bordo">
-                      <TdR colSpan={3} className="text-right">
-                        TOTAL
-                      </TdR>
-                      <TdR>
-                        {formatMoedaBR(resultado.totalAcumulado36meses)}
-                      </TdR>
-                    </tr>
+                    {resultado.tabelaMensal.map((l) => {
+                      const linhaAbusiva = l.status === "abusivo";
+                      const aplicadoCor =
+                        l.percentAplicado > l.percentPermitido
+                          ? "text-bordo font-bold"
+                          : "text-emerald-700";
+                      const difCor =
+                        l.diferencaMensal > 0
+                          ? "text-bordo font-bold"
+                          : "text-emerald-700";
+                      return (
+                        <tr
+                          key={`${l.ano}-${l.mes}`}
+                          className={
+                            linhaAbusiva ? "bg-[#FFF5F5]" : "bg-white"
+                          }
+                        >
+                          <TdR>{l.mesAno}</TdR>
+                          <TdR>{formatMoedaBR(l.valorCobrado)}</TdR>
+                          <TdR>{formatMoedaBR(l.valorDevido)}</TdR>
+                          <TdR className={aplicadoCor}>
+                            {formatPctBR(l.percentAplicado)}
+                          </TdR>
+                          <TdR className="text-grey">
+                            {formatPctBR(l.percentPermitido)}
+                          </TdR>
+                          <TdR className={difCor}>
+                            {formatMoedaBR(l.diferencaMensal)}
+                          </TdR>
+                          <TdR
+                            className={
+                              l.diferencaAcumulada > 0
+                                ? "text-bordo font-bold"
+                                : "text-grey"
+                            }
+                          >
+                            {formatMoedaBR(l.diferencaAcumulada)}
+                          </TdR>
+                          <TdR>
+                            {linhaAbusiva ? (
+                              <span title="Reajuste abusivo">⚠️</span>
+                            ) : (
+                              <span title="Dentro do permitido">✅</span>
+                            )}
+                          </TdR>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              )}
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-b-xl border border-t-0 border-grey/30 p-5 md:p-6 shadow-sm space-y-4">
+            <h3 className="font-black text-lg md:text-xl text-ink">
+              Cálculo do Indébito
+            </h3>
+            <CardPasso titulo="PASSO 1 — Identificação do reajuste excessivo">
+              {`Reajuste aplicado pela operadora:    ${formatPctBR(
+                resultado.memoriaCalculo.reajusteAplicado,
+              )}\n${
+                resultado.tipoReferencia === "ANS"
+                  ? "Teto ANS para o período:             "
+                  : "Referência IPCA estimado:            "
+              }${formatPctBR(
+                resultado.memoriaCalculo.tetoANS,
+              )}\nExcesso percentual:                  ${formatPctBR(
+                resultado.memoriaCalculo.excesso,
+              )} (${resultado.memoriaCalculo.excesso.toLocaleString("pt-BR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} pontos)`}
+            </CardPasso>
+            <CardPasso titulo="PASSO 2 — Cálculo da mensalidade justa">
+              <span className="block">
+                {`Mensalidade atual:                   ${formatMoedaBR(
+                  resultado.valorMensalidadeAtual,
+                )}\nFórmula:\n  ${
+                  resultado.memoriaCalculo.formulaMensalidadeJusta
+                }\nResultado:`}
+              </span>
+              <span className="block mt-2 text-bordo font-bold text-base md:text-lg">
+                {formatMoedaBR(resultado.memoriaCalculo.mensalidadeJusta)}
+              </span>
+            </CardPasso>
+            <CardPasso titulo="PASSO 3 — Diferença mensal e acumulada">
+              {`Diferença mensal:    ${formatMoedaBR(
+                resultado.valorMensalidadeAtual,
+              )} − ${formatMoedaBR(
+                resultado.memoriaCalculo.mensalidadeJusta,
+              )} = ${formatMoedaBR(
+                resultado.memoriaCalculo.diferencaMensal,
+              )}\nDiferença em 12 meses: ${formatMoedaBR(
+                resultado.memoriaCalculo.diferenca12Meses,
+              )}\nDiferença em 36 meses: ${formatMoedaBR(
+                resultado.memoriaCalculo.diferenca36Meses,
+              )}`}
+            </CardPasso>
+            <CardPasso titulo="PASSO 4 — Aplicação da prescrição trienal">
+              <span className="block font-sans text-ink leading-relaxed text-[13px] md:text-sm">
+                Pelo art. 206, §3º, V do Código Civil, a pretensão de
+                ressarcimento por enriquecimento sem causa prescreve em 3
+                anos. Aplicado ao seu caso, a recuperação cobre os últimos{" "}
+                {resultado.numMesesRestituicao} mes
+                {resultado.numMesesRestituicao === 1 ? "" : "es"}.
+              </span>
+              <span className="block mt-3 text-bordo font-bold text-base md:text-lg">
+                Total estimado: {formatMoedaBR(resultado.valorRestituicaoTrienal)}
+              </span>
+            </CardPasso>
+          </div>
+        )}
       </div>
 
-      {/* (D) CTA principal — verde WhatsApp */}
-      <div>
+      {/* ─── BLOCO 5 — CTA final ─── */}
+      <div className="rounded-xl bg-white border border-grey/30 p-6 md:p-8 shadow-sm">
+        <h3 className="font-black text-xl md:text-2xl text-ink">
+          Quer confirmar esses cálculos com nossa equipe?
+        </h3>
+        <p className="mt-2 text-grey leading-relaxed">
+          Análise definitiva exige avaliação documental do contrato e dos
+          boletos. Nossa equipe pode revisar gratuitamente e indicar os
+          próximos passos.
+        </p>
         <a
           href={linkWpp}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-center px-6 py-5 rounded-md bg-[#25D366] text-white font-bold text-base md:text-lg shadow-md hover:bg-[#20bd5a] transition-colors"
+          className="mt-5 block text-center px-6 py-5 rounded-md bg-[#25D366] text-white font-bold text-base md:text-lg shadow-md hover:bg-[#20bd5a] transition-colors"
         >
-          Confirmar o valor exato em consulta com a equipe Tayah →
+          💬 Falar com a equipe Tayah no WhatsApp →
         </a>
-        <p className="mt-2 text-[13px] text-grey text-center">
-          Análise definitiva exige avaliação documental. Sem custo, sem
-          compromisso.
-        </p>
       </div>
+    </div>
+  );
+}
 
-      {/* (E) CTA secundário — refazer */}
-      <div className="text-center">
-        <button
-          type="button"
-          onClick={onReiniciar}
-          className="text-sm font-bold text-grey hover:text-bordo underline-offset-4 hover:underline transition-colors"
-        >
-          Refazer análise
-        </button>
+/* ────────── helpers visuais do dashboard ────────── */
+
+function CardTopo({
+  rotulo,
+  icone,
+  valor,
+  subtitulo,
+  corValor = "text-ink",
+  bordaEsquerda = "",
+}: {
+  rotulo: string;
+  icone: string;
+  valor: string;
+  subtitulo: string;
+  corValor?: string;
+  bordaEsquerda?: string;
+}) {
+  return (
+    <div
+      className={`rounded-xl bg-white border border-grey/20 ${bordaEsquerda} shadow-sm p-5 md:p-6 transition-shadow hover:shadow-md`}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-grey">
+          {rotulo}
+        </p>
+        <span className="text-grey text-lg leading-none" aria-hidden="true">
+          {icone}
+        </span>
+      </div>
+      <p
+        className={`font-bold text-2xl md:text-[28px] leading-tight ${corValor}`}
+      >
+        {valor}
+      </p>
+      <p className="mt-2 text-xs text-grey leading-snug">{subtitulo}</p>
+    </div>
+  );
+}
+
+function TabBotao({
+  ativa,
+  onClick,
+  label,
+}: {
+  ativa: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 px-4 py-3 text-sm md:text-base font-bold transition-colors border-b-2 ${
+        ativa
+          ? "bg-white text-ink border-bordo"
+          : "bg-[#F0F0F0] text-grey border-transparent hover:text-ink"
+      } first:rounded-tl-xl last:rounded-tr-xl`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function CardPasso({
+  titulo,
+  children,
+}: {
+  titulo: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="rounded-md bg-[#F5F5F5] border border-grey/20 p-4 md:p-5"
+      // Padrão "quadriculado" sutil que reforça a vibe de planilha técnica.
+      style={{
+        backgroundImage:
+          "linear-gradient(rgba(138,141,143,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(138,141,143,0.08) 1px, transparent 1px)",
+        backgroundSize: "24px 24px",
+      }}
+    >
+      <p className="font-bold text-ink mb-3 text-sm md:text-base">{titulo}</p>
+      <div className="font-mono text-[12px] md:text-sm text-ink leading-relaxed whitespace-pre-wrap">
+        {children}
       </div>
     </div>
   );
