@@ -29,7 +29,7 @@ export default function Hero() {
           {/* ─────────── Coluna esquerda (3/5 desktop) ─────────── */}
           <div className="md:col-span-3 animate-[var(--animate-slide-up)]">
             <span className="inline-block bg-bordo text-white text-[11px] md:text-xs font-bold uppercase tracking-[0.18em] px-3 py-1.5 rounded">
-              ⚖️ Direito da Saúde · 65 anos de tradição
+              Direito da Saúde · 65 anos de tradição
             </span>
 
             <h1 className="mt-6 font-black text-[36px] md:text-[56px] leading-[1.05] text-ink">
