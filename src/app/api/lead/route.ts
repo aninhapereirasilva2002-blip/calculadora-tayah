@@ -4,7 +4,7 @@
  * configurado em EMAIL_DESTINO via Resend.
  *
  * Fluxo:
- *  1. Cliente responde as 4 perguntas + dados de contato e clica
+ *  1. Cliente responde as 6 perguntas + dados de contato e clica
  *     "Ver meu diagnóstico"
  *  2. Calculator.tsx faz POST para esta rota com as respostas (ids)
  *  3. Aqui validamos com Zod, RECALCULAMOS a pontuação no servidor
@@ -21,14 +21,18 @@ import { z } from "zod";
 import { Resend } from "resend";
 import {
   APRESENTACAO,
+  MENSALIDADE_MAX,
+  MENSALIDADE_MIN,
   OPCOES_ENTRADA,
   OPCOES_REAJUSTE,
+  OPCOES_TEMPO,
   OPCOES_TIPO_PLANO,
   OPCOES_VIDAS,
   PONTUACAO_MAXIMA,
   calcularFalsoColetivo,
+  formatMoedaBR,
   rotuloDe,
-  type NivelIndicio,
+  type NivelChance,
   type ResultadoFalsoColetivo,
 } from "@/lib/calculator-falso-coletivo";
 
@@ -49,6 +53,8 @@ const PayloadSchema = z.object({
     vidas: z.enum(["so_eu", "de_2_a_29", "30_ou_mais"]),
     entrada: z.enum(["clt", "abriu_empresa", "associou_entidade", "outro"]),
     reajuste: z.enum(["sim", "nao", "varia"]),
+    mensalidade: z.number().min(MENSALIDADE_MIN).max(MENSALIDADE_MAX),
+    tempo: z.enum(["menos_1", "de_1_a_3", "de_3_a_5", "mais_5"]),
   }),
 });
 
@@ -130,15 +136,15 @@ export async function POST(request: Request) {
 // Composição do email
 // ============================================================
 
-const COR_NIVEL: Record<NivelIndicio, string> = {
-  fortes: "#9E2A2B",
-  alguns: "#D97706",
-  nenhum: "#16A34A",
+const COR_NIVEL: Record<NivelChance, string> = {
+  alta: "#9E2A2B",
+  moderada: "#D97706",
+  baixa: "#16A34A",
 };
 
 function montarAssunto(d: Payload, r: ResultadoFalsoColetivo): string {
   const a = APRESENTACAO[r.nivel];
-  return `🔔 Novo lead (Falso Coletivo) — ${d.nome} — ${a.emoji} ${a.rotulo}`;
+  return `🔔 Novo lead (Falso Coletivo) — ${d.nome} — ${a.emoji} ${r.percentual}% ${a.rotulo}`;
 }
 
 function formatarDataHora(): string {
@@ -205,6 +211,14 @@ function montarEmailHTML(d: Payload, r: ResultadoFalsoColetivo): string {
       rotulo: "4. Reajuste acima de 15%",
       valor: escapeHTML(rotuloDe(OPCOES_REAJUSTE, resp.reajuste)),
     },
+    {
+      rotulo: "5. Mensalidade atual",
+      valor: formatMoedaBR(resp.mensalidade),
+    },
+    {
+      rotulo: "6. Tempo de plano",
+      valor: escapeHTML(rotuloDe(OPCOES_TEMPO, resp.tempo)),
+    },
   ];
 
   const renderLinhas = (linhas: Array<{ rotulo: string; valor: string }>) =>
@@ -241,16 +255,19 @@ function montarEmailHTML(d: Payload, r: ResultadoFalsoColetivo): string {
         </div>
       </div>
 
-      <!-- Card destaque (diagnóstico + pontuação) -->
+      <!-- Card destaque (porcentagem + cenário) -->
       <div style="margin: 24px 32px; padding: 20px 24px; background: #F5F5F5; border-radius: 8px;">
-        <div style="font-size: 24px; font-weight: 900; color: ${cor}; line-height: 1.25;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F;">
+          Chance de falso coletivo
+        </div>
+        <div style="margin-top: 4px; font-size: 40px; font-weight: 900; color: ${cor}; line-height: 1.1;">
+          ${r.percentual}%
+        </div>
+        <div style="margin-top: 6px; font-size: 20px; font-weight: 900; color: ${cor}; line-height: 1.25;">
           ${ap.emoji} ${escapeHTML(ap.rotulo)}
         </div>
-        <div style="margin-top: 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F;">
-          Pontuação
-        </div>
-        <div style="margin-top: 4px; font-size: 22px; font-weight: 700; color: #1A1A1A;">
-          ${r.pontos} / ${PONTUACAO_MAXIMA} pontos
+        <div style="margin-top: 8px; font-size: 13px; color: #8A8D8F;">
+          ${r.pontos} de ${PONTUACAO_MAXIMA} pontos
         </div>
       </div>
 

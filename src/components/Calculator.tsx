@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Calculator.tsx — calculadora pública de indícios de FALSO COLETIVO.
+ * Calculator.tsx — calculadora pública de FALSO COLETIVO (v2).
  *
- * Fluxo: 4 perguntas de múltipla escolha → captura de lead → resultado
- * (3 cenários). Sem valores em R$ e sem promessa de resultado
+ * Fluxo: 6 perguntas → captura de lead → resultado com % de chance
+ * (3 faixas). Sem valores de restituição em R$ e sem promessa de resultado
  * (compliance OAB). Regra de pontuação em calculator-falso-coletivo.ts.
  *
  * Paleta (Manual de Identidade Visual Tayah):
@@ -17,19 +17,24 @@
 import { useId, useMemo, useRef, useState } from "react";
 import {
   APRESENTACAO,
+  MENSALIDADE_MAX,
+  MENSALIDADE_MIN,
   OPCOES_ENTRADA,
   OPCOES_REAJUSTE,
+  OPCOES_TEMPO,
   OPCOES_TIPO_PLANO,
   OPCOES_VIDAS,
   calcularFalsoColetivo,
+  formatMoedaBR,
   rotuloDe,
   type FormaEntrada,
-  type NivelIndicio,
+  type NivelChance,
   type Opcao,
   type QtdVidas,
   type ReajusteAlto,
   type RespostasFalsoColetivo,
   type ResultadoFalsoColetivo,
+  type TempoPlano,
   type TipoPlanoFC,
 } from "@/lib/calculator-falso-coletivo";
 import { linkWhatsapp } from "@/lib/contato";
@@ -41,7 +46,7 @@ interface EstadoForm extends Partial<RespostasFalsoColetivo> {
   aceitouPolitica?: boolean;
 }
 
-const TOTAL_PASSOS = 5; // 4 perguntas + captura de lead
+const TOTAL_PASSOS = 7; // 6 perguntas + captura de lead
 
 export default function Calculator() {
   const [passo, setPasso] = useState(1);
@@ -68,6 +73,14 @@ export default function Calculator() {
       case 4:
         return !!dados.reajuste;
       case 5:
+        return (
+          typeof dados.mensalidade === "number" &&
+          dados.mensalidade >= MENSALIDADE_MIN &&
+          dados.mensalidade <= MENSALIDADE_MAX
+        );
+      case 6:
+        return !!dados.tempo;
+      case 7:
         return (
           !!dados.nome?.trim() &&
           !!dados.email?.trim() &&
@@ -116,7 +129,7 @@ export default function Calculator() {
   if (resultado) {
     return (
       <TelaResultado
-        nivel={resultado.nivel}
+        resultado={resultado}
         dados={dados as RespostasFalsoColetivo & { nome?: string }}
         onReiniciar={reiniciar}
       />
@@ -168,6 +181,21 @@ export default function Calculator() {
           />
         )}
         {passo === 5 && (
+          <PassoMensalidade
+            valor={dados.mensalidade}
+            onChange={(v) => atualizar("mensalidade", v)}
+          />
+        )}
+        {passo === 6 && (
+          <PerguntaRadio<TempoPlano>
+            titulo="Há quanto tempo você tem esse plano?"
+            opcoes={OPCOES_TEMPO}
+            valor={dados.tempo}
+            onChange={(v) => atualizar("tempo", v)}
+            colunas={2}
+          />
+        )}
+        {passo === 7 && (
           <PassoCapturaLead
             dados={dados}
             onNome={(v) => atualizar("nome", v)}
@@ -307,7 +335,72 @@ function CardRadio({
 }
 
 /* ============================================================
-   Passo 5 — Captura de lead
+   Passo 5 — Mensalidade (máscara R$ em tempo real, centavos
+   implícitos: digitar 150000 → R$ 1.500,00)
+   ============================================================ */
+function PassoMensalidade({
+  valor,
+  onChange,
+}: {
+  valor?: number;
+  onChange: (v: number | undefined) => void;
+}) {
+  const id = useId();
+  const idAjuda = useId();
+  const display =
+    valor === undefined
+      ? ""
+      : valor.toLocaleString("pt-BR", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+  const foraDaFaixa =
+    typeof valor === "number" &&
+    (valor < MENSALIDADE_MIN || valor > MENSALIDADE_MAX);
+
+  return (
+    <div>
+      <h2 className="font-black text-3xl md:text-4xl text-ink leading-tight mb-6">
+        Qual o valor atual da sua mensalidade?
+      </h2>
+      <label htmlFor={id} className="sr-only">
+        Valor da mensalidade em reais
+      </label>
+      <div className="relative">
+        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-grey font-bold">
+          R$
+        </span>
+        <input
+          id={id}
+          type="text"
+          inputMode="numeric"
+          value={display}
+          aria-describedby={idAjuda}
+          aria-invalid={foraDaFaixa}
+          onChange={(e) => {
+            // Aceita só dígitos; limita a 9 para não estourar a máscara.
+            const digitos = e.target.value.replace(/\D/g, "").slice(0, 9);
+            onChange(digitos === "" ? undefined : parseInt(digitos, 10) / 100);
+          }}
+          placeholder="0,00"
+          className={`w-full pl-12 pr-4 py-3 rounded-md border bg-white text-ink text-lg focus:border-bordo ${
+            foraDaFaixa ? "border-bordo" : "border-grey/50"
+          }`}
+        />
+      </div>
+      <p
+        id={idAjuda}
+        className={`mt-2 text-xs ${foraDaFaixa ? "text-bordo font-bold" : "text-grey"}`}
+      >
+        Valores aceitos entre {formatMoedaBR(MENSALIDADE_MIN)} e{" "}
+        {formatMoedaBR(MENSALIDADE_MAX)}.
+      </p>
+    </div>
+  );
+}
+
+/* ============================================================
+   Passo 7 — Captura de lead
    ============================================================ */
 function PassoCapturaLead({
   dados,
@@ -414,35 +507,87 @@ function PassoCapturaLead({
    sem R$, sem promessa de resultado.
    ============================================================ */
 const ESTILO_NIVEL: Record<
-  NivelIndicio,
-  { fundo: string; borda: string; titulo: string }
+  NivelChance,
+  { fundo: string; borda: string; titulo: string; anel: string }
 > = {
-  fortes: {
+  alta: {
     fundo: "bg-[#FFF1F1]",
     borda: "border-bordo/60",
     titulo: "text-bordo",
+    anel: "#9E2A2B",
   },
-  alguns: {
+  moderada: {
     fundo: "bg-[#FFF8EB]",
     borda: "border-[#D97706]/60",
     titulo: "text-[#B45309]",
+    anel: "#D97706",
   },
-  nenhum: {
+  baixa: {
     fundo: "bg-[#F0FAF3]",
     borda: "border-emerald-600/50",
     titulo: "text-emerald-800",
+    anel: "#16A34A",
   },
 };
 
+/** Círculo de progresso com a porcentagem no centro. */
+function CirculoPercentual({ pct, cor }: { pct: number; cor: string }) {
+  const r = 52;
+  const circ = 2 * Math.PI * r;
+  return (
+    <div
+      className="relative w-40 h-40 md:w-48 md:h-48 mx-auto"
+      role="img"
+      aria-label={`${pct}% de chance`}
+    >
+      <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+        <circle
+          cx="60"
+          cy="60"
+          r={r}
+          fill="none"
+          stroke="#8A8D8F"
+          strokeOpacity="0.2"
+          strokeWidth="10"
+        />
+        <circle
+          cx="60"
+          cy="60"
+          r={r}
+          fill="none"
+          stroke={cor}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - pct / 100)}
+          className="transition-[stroke-dashoffset] duration-1000 ease-out"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span
+          className="font-black text-4xl md:text-5xl leading-none"
+          style={{ color: cor }}
+        >
+          {pct}%
+        </span>
+        <span className="mt-1 text-xs md:text-sm font-bold uppercase tracking-wider text-grey">
+          de chance
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function TelaResultado({
-  nivel,
+  resultado,
   dados,
   onReiniciar,
 }: {
-  nivel: NivelIndicio;
+  resultado: ResultadoFalsoColetivo;
   dados: RespostasFalsoColetivo & { nome?: string };
   onReiniciar: () => void;
 }) {
+  const nivel = resultado.nivel;
   const ap = APRESENTACAO[nivel];
   const estilo = ESTILO_NIVEL[nivel];
 
@@ -452,18 +597,19 @@ function TelaResultado({
       `Olá! Fiz a calculadora de falso coletivo no site do Tayah Advogados e gostaria de uma análise do meu caso.`,
       ``,
       `Meu nome é ${dados.nome?.trim() || "..."}.`,
-      `Resultado: *${ap.rotulo}*.`,
+      `Resultado: *${resultado.percentual}% — ${ap.rotulo}*.`,
       ``,
       `Minhas respostas:`,
       `• Tipo de plano: ${rotuloDe(OPCOES_TIPO_PLANO, dados.tipoPlano)}`,
       `• Pessoas no contrato: ${rotuloDe(OPCOES_VIDAS, dados.vidas)}`,
       `• Como entrei no plano: ${rotuloDe(OPCOES_ENTRADA, dados.entrada)}`,
       `• Reajuste acima de 15%: ${rotuloDe(OPCOES_REAJUSTE, dados.reajuste)}`,
+      `• Tempo de plano: ${rotuloDe(OPCOES_TEMPO, dados.tempo)}`,
     ];
     return linkWhatsapp(linhas.join("\n"));
-  }, [dados, ap.rotulo]);
+  }, [dados, ap.rotulo, resultado.percentual]);
 
-  const ctaGrande = nivel === "fortes";
+  const ctaGrande = nivel === "alta";
 
   return (
     <div className="w-full max-w-3xl mx-auto animate-[var(--animate-fade-in)] space-y-6">
@@ -471,12 +617,11 @@ function TelaResultado({
       <div
         className={`rounded-xl border ${estilo.fundo} ${estilo.borda} p-6 md:p-8 shadow-sm`}
       >
-        <div className="text-4xl md:text-5xl leading-none" aria-hidden="true">
-          {ap.emoji}
-        </div>
+        <CirculoPercentual pct={resultado.percentual} cor={estilo.anel} />
         <h3
-          className={`mt-4 font-black text-2xl md:text-3xl leading-tight ${estilo.titulo}`}
+          className={`mt-6 text-center font-black text-2xl md:text-3xl leading-tight ${estilo.titulo}`}
         >
+          <span aria-hidden="true">{ap.emoji} </span>
           {ap.titulo}
         </h3>
         <p className="mt-4 text-ink text-base md:text-lg leading-relaxed">
@@ -561,6 +706,8 @@ async function enviarLead(
       vidas: respostas.vidas,
       entrada: respostas.entrada,
       reajuste: respostas.reajuste,
+      mensalidade: respostas.mensalidade,
+      tempo: respostas.tempo,
     },
   };
 

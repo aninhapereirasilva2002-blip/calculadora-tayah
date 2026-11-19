@@ -43,7 +43,7 @@ export default function Hero() {
             </p>
 
             <ul className="mt-7 space-y-2.5">
-              <BulletCheck texto="Apenas 4 perguntas rápidas" />
+              <BulletCheck texto="Apenas 6 perguntas rápidas" />
               <BulletCheck texto="Desenvolvida pela equipe Tayah Advogados" />
               <BulletCheck texto="Sem custo · Sem compromisso" />
             </ul>
@@ -70,8 +70,10 @@ export default function Hero() {
             </p>
           </div>
 
-          {/* ─────────── Coluna direita (2/5 desktop) ─────────── */}
-          <div className="hidden md:flex md:col-span-2 flex-col gap-4">
+          {/* ─────────── Coluna direita (2/5 desktop) ───────────
+              4 cards: 1 por linha no mobile e na coluna estreita (md),
+              2x2 a partir de xl (1280px), quando a coluna tem largura pra isso. */}
+          <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2 gap-4">
             <CardDado
               numero="+81%"
               rotulo="de crescimento nos contratos coletivos de até 5 vidas entre 2019 e 2026"
@@ -89,6 +91,12 @@ export default function Hero() {
               rotulo="já aplica os índices da ANS aos falsos coletivos reconhecidos judicialmente"
               fonte="STJ, maio/2026"
               delayMs={700}
+            />
+            <CardDado
+              numero="R$ 15 mil a R$ 80 mil"
+              rotulo="é a faixa comum de restituição em casos de falso coletivo reconhecidos judicialmente"
+              fonte="Fonte: decisões recentes do STJ (2026)"
+              delayMs={900}
             />
           </div>
         </div>
@@ -146,10 +154,10 @@ function CardDado({
       // Atraso escalonado para criar a sensação de cards "caindo" em sequência.
       style={{ animationDelay: `${delayMs}ms` }}
     >
-      <div className="font-black text-bordo text-3xl md:text-4xl leading-none">
+      <div className="font-black text-bordo text-3xl xl:text-[28px] leading-tight">
         {numero}
       </div>
-      <div className="mt-2 text-sm md:text-base text-grey font-bold leading-snug">
+      <div className="mt-2 text-sm text-grey font-bold leading-snug">
         {rotulo}
       </div>
       <div className="mt-3 text-xs text-grey">{fonte}</div>
