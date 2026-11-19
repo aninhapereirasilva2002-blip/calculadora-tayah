@@ -1,11 +1,14 @@
 "use client";
 
 /**
- * Calculator.tsx — calculadora pública de FALSO COLETIVO (v2).
+ * Calculator.tsx — calculadora pública de FALSO COLETIVO (v3).
  *
- * Fluxo: 6 perguntas → captura de lead → resultado com % de chance
- * (3 faixas). Sem valores de restituição em R$ e sem promessa de resultado
- * (compliance OAB). Regra de pontuação em calculator-falso-coletivo.ts.
+ * Fluxo: 5 perguntas → captura de lead → resultado.
+ *  - P1, P2, P3 testam os 3 requisitos do falso coletivo
+ *  - P4 (mensalidade) e P5 (tempo) são dados adicionais para a equipe
+ *
+ * Regra em calculator-falso-coletivo.ts; tela final em
+ * ResultadoFalsoColetivo.tsx. Aqui ficam só as perguntas e o lead.
  *
  * Paleta (Manual de Identidade Visual Tayah):
  *  - bordo  #9E2A2B → CTAs, barra de progresso, destaques
@@ -16,28 +19,23 @@
 
 import { useId, useMemo, useRef, useState } from "react";
 import {
-  APRESENTACAO,
   MENSALIDADE_MAX,
   MENSALIDADE_MIN,
-  OPCOES_ENTRADA,
   OPCOES_REAJUSTE,
   OPCOES_TEMPO,
-  OPCOES_TIPO_PLANO,
   OPCOES_VIDAS,
+  OPCOES_VINCULO,
   calcularFalsoColetivo,
   formatMoedaBR,
-  rotuloDe,
-  type FormaEntrada,
-  type NivelChance,
+  type FaixaReajuste,
   type Opcao,
   type QtdVidas,
-  type ReajusteAlto,
   type RespostasFalsoColetivo,
   type ResultadoFalsoColetivo,
   type TempoPlano,
-  type TipoPlanoFC,
+  type Vinculo,
 } from "@/lib/calculator-falso-coletivo";
-import { linkWhatsapp } from "@/lib/contato";
+import ResultadoFalsoColetivoTela from "@/components/ResultadoFalsoColetivo";
 
 interface EstadoForm extends Partial<RespostasFalsoColetivo> {
   nome?: string;
@@ -46,7 +44,7 @@ interface EstadoForm extends Partial<RespostasFalsoColetivo> {
   aceitouPolitica?: boolean;
 }
 
-const TOTAL_PASSOS = 7; // 6 perguntas + captura de lead
+const TOTAL_PASSOS = 6; // 5 perguntas + captura de lead
 
 export default function Calculator() {
   const [passo, setPasso] = useState(1);
@@ -65,22 +63,20 @@ export default function Calculator() {
   const podeAvancar = useMemo(() => {
     switch (passo) {
       case 1:
-        return !!dados.tipoPlano;
+        return !!dados.vinculo;
       case 2:
         return !!dados.vidas;
       case 3:
-        return !!dados.entrada;
-      case 4:
         return !!dados.reajuste;
-      case 5:
+      case 4:
         return (
           typeof dados.mensalidade === "number" &&
           dados.mensalidade >= MENSALIDADE_MIN &&
           dados.mensalidade <= MENSALIDADE_MAX
         );
-      case 6:
+      case 5:
         return !!dados.tempo;
-      case 7:
+      case 6:
         return (
           !!dados.nome?.trim() &&
           !!dados.email?.trim() &&
@@ -128,7 +124,7 @@ export default function Calculator() {
 
   if (resultado) {
     return (
-      <TelaResultado
+      <ResultadoFalsoColetivoTela
         resultado={resultado}
         dados={dados as RespostasFalsoColetivo & { nome?: string }}
         onReiniciar={reiniciar}
@@ -148,46 +144,42 @@ export default function Calculator() {
         aria-label={`Passo ${passo} de ${TOTAL_PASSOS}`}
       >
         {passo === 1 && (
-          <PerguntaRadio<TipoPlanoFC>
-            titulo="Qual o tipo do seu plano de saúde?"
-            opcoes={OPCOES_TIPO_PLANO}
-            valor={dados.tipoPlano}
-            onChange={(v) => atualizar("tipoPlano", v)}
-            colunas={2}
+          <PerguntaRadio<Vinculo>
+            rotuloVisual="Vínculo com a empresa"
+            titulo="Você já tinha vínculo com a empresa titular do plano antes de contratá-lo?"
+            opcoes={OPCOES_VINCULO}
+            valor={dados.vinculo}
+            onChange={(v) => atualizar("vinculo", v)}
           />
         )}
         {passo === 2 && (
           <PerguntaRadio<QtdVidas>
+            rotuloVisual="Tamanho do contrato"
             titulo="Quantas pessoas estão nesse contrato?"
             opcoes={OPCOES_VIDAS}
             valor={dados.vidas}
             onChange={(v) => atualizar("vidas", v)}
+            colunas={2}
           />
         )}
         {passo === 3 && (
-          <PerguntaRadio<FormaEntrada>
-            titulo="Como você entrou nesse plano?"
-            opcoes={OPCOES_ENTRADA}
-            valor={dados.entrada}
-            onChange={(v) => atualizar("entrada", v)}
-          />
-        )}
-        {passo === 4 && (
-          <PerguntaRadio<ReajusteAlto>
-            titulo="O reajuste anual costuma ser acima de 15%?"
+          <PerguntaRadio<FaixaReajuste>
+            rotuloVisual="Percentual do reajuste"
+            titulo="Qual o percentual do último reajuste anual aplicado?"
             opcoes={OPCOES_REAJUSTE}
             valor={dados.reajuste}
             onChange={(v) => atualizar("reajuste", v)}
           />
         )}
-        {passo === 5 && (
+        {passo === 4 && (
           <PassoMensalidade
             valor={dados.mensalidade}
             onChange={(v) => atualizar("mensalidade", v)}
           />
         )}
-        {passo === 6 && (
+        {passo === 5 && (
           <PerguntaRadio<TempoPlano>
+            rotuloVisual="Tempo de contrato"
             titulo="Há quanto tempo você tem esse plano?"
             opcoes={OPCOES_TEMPO}
             valor={dados.tempo}
@@ -195,7 +187,7 @@ export default function Calculator() {
             colunas={2}
           />
         )}
-        {passo === 7 && (
+        {passo === 6 && (
           <PassoCapturaLead
             dados={dados}
             onNome={(v) => atualizar("nome", v)}
@@ -264,15 +256,40 @@ function BarraProgresso({
 }
 
 /* ============================================================
+   Cabeçalho de pergunta: rótulo visual (caixa alta, vermelho) +
+   pergunta em destaque.
+   ============================================================ */
+function CabecalhoPergunta({
+  rotuloVisual,
+  titulo,
+}: {
+  rotuloVisual: string;
+  titulo: string;
+}) {
+  return (
+    <>
+      <p className="text-xs md:text-sm uppercase tracking-[0.18em] font-bold text-bordo mb-2">
+        {rotuloVisual}
+      </p>
+      <h2 className="font-black text-2xl md:text-4xl text-ink leading-tight mb-6">
+        {titulo}
+      </h2>
+    </>
+  );
+}
+
+/* ============================================================
    Pergunta genérica de múltipla escolha (cards radio).
    ============================================================ */
 function PerguntaRadio<T extends string>({
+  rotuloVisual,
   titulo,
   opcoes,
   valor,
   onChange,
   colunas = 1,
 }: {
+  rotuloVisual: string;
   titulo: string;
   opcoes: Opcao<T>[];
   valor?: T;
@@ -281,9 +298,7 @@ function PerguntaRadio<T extends string>({
 }) {
   return (
     <div>
-      <h2 className="font-black text-3xl md:text-4xl text-ink leading-tight mb-6">
-        {titulo}
-      </h2>
+      <CabecalhoPergunta rotuloVisual={rotuloVisual} titulo={titulo} />
       <div
         role="radiogroup"
         aria-label={titulo}
@@ -297,7 +312,6 @@ function PerguntaRadio<T extends string>({
             selecionado={valor === op.id}
             onClick={() => onChange(op.id)}
             titulo={op.rotulo}
-            desc={op.desc}
           />
         ))}
       </div>
@@ -309,12 +323,10 @@ function CardRadio({
   selecionado,
   onClick,
   titulo,
-  desc,
 }: {
   selecionado: boolean;
   onClick: () => void;
   titulo: string;
-  desc?: string;
 }) {
   return (
     <button
@@ -329,13 +341,12 @@ function CardRadio({
       }`}
     >
       <div className="font-bold text-ink">{titulo}</div>
-      {desc && <div className="mt-1 text-sm text-grey">{desc}</div>}
     </button>
   );
 }
 
 /* ============================================================
-   Passo 5 — Mensalidade (máscara R$ em tempo real, centavos
+   Passo 4 — Mensalidade (máscara R$ em tempo real, centavos
    implícitos: digitar 150000 → R$ 1.500,00)
    ============================================================ */
 function PassoMensalidade({
@@ -360,9 +371,10 @@ function PassoMensalidade({
 
   return (
     <div>
-      <h2 className="font-black text-3xl md:text-4xl text-ink leading-tight mb-6">
-        Qual o valor atual da sua mensalidade?
-      </h2>
+      <CabecalhoPergunta
+        rotuloVisual="Mensalidade atual"
+        titulo="Qual o valor atual da sua mensalidade?"
+      />
       <label htmlFor={id} className="sr-only">
         Valor da mensalidade em reais
       </label>
@@ -400,7 +412,7 @@ function PassoMensalidade({
 }
 
 /* ============================================================
-   Passo 7 — Captura de lead
+   Passo 6 — Captura de lead
    ============================================================ */
 function PassoCapturaLead({
   dados,
@@ -502,195 +514,9 @@ function PassoCapturaLead({
   );
 }
 
-/* ============================================================
-   Tela de resultado — 3 cenários. Tom cuidadoso (compliance OAB):
-   sem R$, sem promessa de resultado.
-   ============================================================ */
-const ESTILO_NIVEL: Record<
-  NivelChance,
-  { fundo: string; borda: string; titulo: string; anel: string }
-> = {
-  alta: {
-    fundo: "bg-[#FFF1F1]",
-    borda: "border-bordo/60",
-    titulo: "text-bordo",
-    anel: "#9E2A2B",
-  },
-  moderada: {
-    fundo: "bg-[#FFF8EB]",
-    borda: "border-[#D97706]/60",
-    titulo: "text-[#B45309]",
-    anel: "#D97706",
-  },
-  baixa: {
-    fundo: "bg-[#F0FAF3]",
-    borda: "border-emerald-600/50",
-    titulo: "text-emerald-800",
-    anel: "#16A34A",
-  },
-};
-
-/** Círculo de progresso com a porcentagem no centro. */
-function CirculoPercentual({ pct, cor }: { pct: number; cor: string }) {
-  const r = 52;
-  const circ = 2 * Math.PI * r;
-  return (
-    <div
-      className="relative w-40 h-40 md:w-48 md:h-48 mx-auto"
-      role="img"
-      aria-label={`${pct}% de chance`}
-    >
-      <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-        <circle
-          cx="60"
-          cy="60"
-          r={r}
-          fill="none"
-          stroke="#8A8D8F"
-          strokeOpacity="0.2"
-          strokeWidth="10"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r={r}
-          fill="none"
-          stroke={cor}
-          strokeWidth="10"
-          strokeLinecap="round"
-          strokeDasharray={circ}
-          strokeDashoffset={circ * (1 - pct / 100)}
-          className="transition-[stroke-dashoffset] duration-1000 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span
-          className="font-black text-4xl md:text-5xl leading-none"
-          style={{ color: cor }}
-        >
-          {pct}%
-        </span>
-        <span className="mt-1 text-xs md:text-sm font-bold uppercase tracking-wider text-grey">
-          de chance
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function TelaResultado({
-  resultado,
-  dados,
-  onReiniciar,
-}: {
-  resultado: ResultadoFalsoColetivo;
-  dados: RespostasFalsoColetivo & { nome?: string };
-  onReiniciar: () => void;
-}) {
-  const nivel = resultado.nivel;
-  const ap = APRESENTACAO[nivel];
-  const estilo = ESTILO_NIVEL[nivel];
-
-  // Mensagem pré-preenchida para o WhatsApp (sem valores, sem promessa).
-  const linkWpp = useMemo(() => {
-    const linhas = [
-      `Olá! Fiz a calculadora de falso coletivo no site do Tayah Advogados e gostaria de uma análise do meu caso.`,
-      ``,
-      `Meu nome é ${dados.nome?.trim() || "..."}.`,
-      `Resultado: *${resultado.percentual}% — ${ap.rotulo}*.`,
-      ``,
-      `Minhas respostas:`,
-      `• Tipo de plano: ${rotuloDe(OPCOES_TIPO_PLANO, dados.tipoPlano)}`,
-      `• Pessoas no contrato: ${rotuloDe(OPCOES_VIDAS, dados.vidas)}`,
-      `• Como entrei no plano: ${rotuloDe(OPCOES_ENTRADA, dados.entrada)}`,
-      `• Reajuste acima de 15%: ${rotuloDe(OPCOES_REAJUSTE, dados.reajuste)}`,
-      `• Tempo de plano: ${rotuloDe(OPCOES_TEMPO, dados.tempo)}`,
-    ];
-    return linkWhatsapp(linhas.join("\n"));
-  }, [dados, ap.rotulo, resultado.percentual]);
-
-  const ctaGrande = nivel === "alta";
-
-  return (
-    <div className="w-full max-w-3xl mx-auto animate-[var(--animate-fade-in)] space-y-6">
-      {/* Diagnóstico */}
-      <div
-        className={`rounded-xl border ${estilo.fundo} ${estilo.borda} p-6 md:p-8 shadow-sm`}
-      >
-        <CirculoPercentual pct={resultado.percentual} cor={estilo.anel} />
-        <h3
-          className={`mt-6 text-center font-black text-2xl md:text-3xl leading-tight ${estilo.titulo}`}
-        >
-          <span aria-hidden="true">{ap.emoji} </span>
-          {ap.titulo}
-        </h3>
-        <p className="mt-4 text-ink text-base md:text-lg leading-relaxed">
-          {ap.texto}
-        </p>
-
-        <a
-          href={linkWpp}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`mt-6 block text-center rounded-md bg-[#25D366] text-white font-bold shadow-md hover:bg-[#20bd5a] transition-colors ${
-            ctaGrande
-              ? "px-6 py-6 text-lg md:text-xl"
-              : "px-6 py-5 text-base md:text-lg"
-          }`}
-        >
-          💬 {ap.cta}
-        </a>
-        <p className="mt-3 text-center text-sm text-grey">
-          WhatsApp (21) 99891-7757
-        </p>
-      </div>
-
-      {/* Por que falar com o Tayah */}
-      <div className="rounded-xl bg-white border border-grey/30 p-6 md:p-8 shadow-sm">
-        <h3 className="font-black text-xl md:text-2xl text-ink">
-          Por que falar com o Tayah Advogados?
-        </h3>
-        <ul className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <ItemPorQue icone="🏛️" texto="65 anos de tradição" />
-          <ItemPorQue icone="🩺" texto="Especialistas em Direito da Saúde" />
-          <ItemPorQue icone="🤝" texto="Análise sem compromisso" />
-        </ul>
-      </div>
-
-      <p className="text-xs text-grey leading-relaxed text-center max-w-2xl mx-auto">
-        Este resultado é uma triagem preliminar e informativa, baseada apenas
-        nas respostas fornecidas. Não constitui parecer jurídico nem garantia
-        de resultado. A confirmação depende de análise individual do contrato
-        e dos documentos.
-      </p>
-
-      <div className="text-center">
-        <button
-          type="button"
-          onClick={onReiniciar}
-          className="px-4 py-2 rounded-md border border-grey/40 text-ink text-sm font-bold hover:bg-grey/5 transition-colors"
-        >
-          ↻ Refazer análise
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ItemPorQue({ icone, texto }: { icone: string; texto: string }) {
-  return (
-    <li className="flex items-center gap-3 rounded-md bg-offwhite border border-grey/20 p-4">
-      <span className="text-2xl leading-none" aria-hidden="true">
-        {icone}
-      </span>
-      <span className="font-bold text-ink leading-snug">{texto}</span>
-    </li>
-  );
-}
-
 /**
- * Envia as respostas + contato para /api/lead, que recalcula a
- * pontuação no servidor e dispara o email para a equipe.
+ * Envia as respostas + contato para /api/lead, que recalcula o
+ * resultado no servidor e dispara o email para a equipe.
  * Fire-and-forget: falhas só vão pro console.
  */
 async function enviarLead(
@@ -702,9 +528,8 @@ async function enviarLead(
     email: form.email?.trim() ?? "",
     whatsapp: form.whatsapp ?? "",
     respostas: {
-      tipoPlano: respostas.tipoPlano,
+      vinculo: respostas.vinculo,
       vidas: respostas.vidas,
-      entrada: respostas.entrada,
       reajuste: respostas.reajuste,
       mensalidade: respostas.mensalidade,
       tempo: respostas.tempo,

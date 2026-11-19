@@ -1,14 +1,14 @@
 /**
  * /api/lead — recebe o preenchimento da calculadora pública de
- * FALSO COLETIVO e dispara uma notificação por email para o endereço
- * configurado em EMAIL_DESTINO via Resend.
+ * FALSO COLETIVO (v3, teste dos 3 requisitos) e dispara uma notificação
+ * por email para o endereço configurado em EMAIL_DESTINO via Resend.
  *
  * Fluxo:
- *  1. Cliente responde as 6 perguntas + dados de contato e clica
+ *  1. Cliente responde as 5 perguntas + dados de contato e clica
  *     "Ver meu diagnóstico"
  *  2. Calculator.tsx faz POST para esta rota com as respostas (ids)
- *  3. Aqui validamos com Zod, RECALCULAMOS a pontuação no servidor
- *     (não confiamos em pontos vindos do cliente) e enviamos via Resend
+ *  3. Aqui validamos com Zod, RECALCULAMOS o resultado no servidor
+ *     (não confiamos em pontuação vinda do cliente) e enviamos via Resend
  *  4. A UX do cliente NÃO depende dessa chamada — falhas são logadas
  *     no console mas não bloqueiam a tela de resultado.
  *
@@ -23,17 +23,17 @@ import {
   APRESENTACAO,
   MENSALIDADE_MAX,
   MENSALIDADE_MIN,
-  OPCOES_ENTRADA,
   OPCOES_REAJUSTE,
   OPCOES_TEMPO,
-  OPCOES_TIPO_PLANO,
   OPCOES_VIDAS,
-  PONTUACAO_MAXIMA,
+  OPCOES_VINCULO,
+  ROTULO_STATUS,
   calcularFalsoColetivo,
   formatMoedaBR,
+  formatPontos,
   rotuloDe,
-  type NivelChance,
   type ResultadoFalsoColetivo,
+  type StatusRequisito,
 } from "@/lib/calculator-falso-coletivo";
 
 // O SDK da Resend usa primitivos do Node; força o runtime correto.
@@ -44,15 +44,20 @@ const PayloadSchema = z.object({
   email: z.string().trim().email(),
   whatsapp: z.string().min(1),
   respostas: z.object({
-    tipoPlano: z.enum([
-      "coletivo_empresarial",
-      "coletivo_adesao",
-      "individual",
+    vinculo: z.enum([
+      "clt",
+      "socio_outras_atividades",
+      "abriu_so_para_plano",
       "nao_sei",
     ]),
-    vidas: z.enum(["so_eu", "de_2_a_29", "30_ou_mais"]),
-    entrada: z.enum(["clt", "abriu_empresa", "associou_entidade", "outro"]),
-    reajuste: z.enum(["sim", "nao", "varia"]),
+    vidas: z.enum(["so_eu", "de_2_a_29", "30_ou_mais", "nao_sei"]),
+    reajuste: z.enum([
+      "ate_6",
+      "de_6_a_10",
+      "de_10_a_20",
+      "mais_20",
+      "nao_lembro",
+    ]),
     mensalidade: z.number().min(MENSALIDADE_MIN).max(MENSALIDADE_MAX),
     tempo: z.enum(["menos_1", "de_1_a_3", "de_3_a_5", "mais_5"]),
   }),
@@ -136,15 +141,15 @@ export async function POST(request: Request) {
 // Composição do email
 // ============================================================
 
-const COR_NIVEL: Record<NivelChance, string> = {
-  alta: "#9E2A2B",
-  moderada: "#D97706",
-  baixa: "#16A34A",
+const COR_STATUS: Record<StatusRequisito, string> = {
+  cumprido: "#16A34A",
+  parcial: "#D97706",
+  nao_cumprido: "#8A8D8F",
 };
 
 function montarAssunto(d: Payload, r: ResultadoFalsoColetivo): string {
-  const a = APRESENTACAO[r.nivel];
-  return `🔔 Novo lead (Falso Coletivo) — ${d.nome} — ${a.emoji} ${r.percentual}% ${a.rotulo}`;
+  const a = APRESENTACAO[r.veredito];
+  return `🔔 Novo lead (Falso Coletivo) — ${d.nome} — ${a.emoji} ${a.rotulo} ${r.percentual}%`;
 }
 
 function formatarDataHora(): string {
@@ -170,14 +175,13 @@ function montarLinkWhatsapp(d: Payload): string {
   const primeiroNome = d.nome.trim().split(/\s+/)[0];
   const mensagem =
     `Olá ${primeiroNome}, sou do escritório Tayah Advogados. ` +
-    `Recebi suas respostas na nossa calculadora de falso coletivo ` +
+    `Recebi suas respostas no nosso teste de falso coletivo ` +
     `e gostaria de conversar sobre o seu caso.`;
   return `https://wa.me/55${limpo}?text=${encodeURIComponent(mensagem)}`;
 }
 
 function montarEmailHTML(d: Payload, r: ResultadoFalsoColetivo): string {
-  const ap = APRESENTACAO[r.nivel];
-  const cor = COR_NIVEL[r.nivel];
+  const ap = APRESENTACAO[r.veredito];
   const linkWpp = montarLinkWhatsapp(d);
   const dataHora = formatarDataHora();
 
@@ -196,27 +200,23 @@ function montarEmailHTML(d: Payload, r: ResultadoFalsoColetivo): string {
   const resp = d.respostas;
   const linhasCalculadora = [
     {
-      rotulo: "1. Tipo do plano",
-      valor: escapeHTML(rotuloDe(OPCOES_TIPO_PLANO, resp.tipoPlano)),
+      rotulo: "1. Vínculo prévio",
+      valor: escapeHTML(rotuloDe(OPCOES_VINCULO, resp.vinculo)),
     },
     {
       rotulo: "2. Pessoas no contrato",
       valor: escapeHTML(rotuloDe(OPCOES_VIDAS, resp.vidas)),
     },
     {
-      rotulo: "3. Forma de entrada",
-      valor: escapeHTML(rotuloDe(OPCOES_ENTRADA, resp.entrada)),
-    },
-    {
-      rotulo: "4. Reajuste acima de 15%",
+      rotulo: "3. Último reajuste",
       valor: escapeHTML(rotuloDe(OPCOES_REAJUSTE, resp.reajuste)),
     },
     {
-      rotulo: "5. Mensalidade atual",
+      rotulo: "4. Mensalidade atual",
       valor: formatMoedaBR(resp.mensalidade),
     },
     {
-      rotulo: "6. Tempo de plano",
+      rotulo: "5. Tempo de contrato",
       valor: escapeHTML(rotuloDe(OPCOES_TEMPO, resp.tempo)),
     },
   ];
@@ -231,6 +231,28 @@ function montarEmailHTML(d: Payload, r: ResultadoFalsoColetivo): string {
         </tr>`,
       )
       .join("");
+
+  const checklist = r.requisitos
+    .map((req) => {
+      const st = ROTULO_STATUS[req.status];
+      return `
+        <tr>
+          <td style="padding: 6px 10px 6px 0; font-size: 16px; vertical-align: top; width: 24px;">${st.icone}</td>
+          <td style="padding: 6px 12px 6px 0; color: #1A1A1A; font-size: 14px;"><strong>Requisito ${req.numero}</strong> — ${escapeHTML(req.nome)}</td>
+          <td style="padding: 6px 0; font-size: 12px; font-weight: 700; color: ${COR_STATUS[req.status]}; white-space: nowrap; text-align: right;">${st.texto}</td>
+        </tr>`;
+    })
+    .join("");
+
+  const secao = (titulo: string, conteudo: string, margemBaixo = 24) => `
+      <div style="margin: 0 32px ${margemBaixo}px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F; margin-bottom: 12px;">
+          ${titulo}
+        </div>
+        <table style="width: 100%; border-collapse: collapse;" cellpadding="0" cellspacing="0">
+          ${conteudo}
+        </table>
+      </div>`;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -251,45 +273,29 @@ function montarEmailHTML(d: Payload, r: ResultadoFalsoColetivo): string {
           Novo lead recebido
         </div>
         <div style="font-size: 13px; margin-top: 8px; opacity: 0.85;">
-          Calculadora Falso Coletivo · ${escapeHTML(dataHora)}
+          Teste dos 3 requisitos · Falso Coletivo · ${escapeHTML(dataHora)}
         </div>
       </div>
 
-      <!-- Card destaque (porcentagem + cenário) -->
+      <!-- Card destaque (veredito + porcentagem) -->
       <div style="margin: 24px 32px; padding: 20px 24px; background: #F5F5F5; border-radius: 8px;">
         <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F;">
-          Chance de falso coletivo
+          Veredito
         </div>
-        <div style="margin-top: 4px; font-size: 40px; font-weight: 900; color: ${cor}; line-height: 1.1;">
-          ${r.percentual}%
+        <div style="margin-top: 4px; font-size: 28px; font-weight: 900; color: ${ap.cor}; line-height: 1.15;">
+          ${ap.emoji} ${escapeHTML(ap.rotulo)} · ${r.percentual}%
         </div>
-        <div style="margin-top: 6px; font-size: 20px; font-weight: 900; color: ${cor}; line-height: 1.25;">
-          ${ap.emoji} ${escapeHTML(ap.rotulo)}
+        <div style="margin-top: 6px; font-size: 14px; color: #1A1A1A;">
+          ${escapeHTML(ap.titulo)}
         </div>
         <div style="margin-top: 8px; font-size: 13px; color: #8A8D8F;">
-          ${r.pontos} de ${PONTUACAO_MAXIMA} pontos
+          ${formatPontos(r.pontos)} de 3 pontos nos requisitos
         </div>
       </div>
 
-      <!-- Dados de contato -->
-      <div style="margin: 0 32px 24px;">
-        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F; margin-bottom: 12px;">
-          Dados de contato
-        </div>
-        <table style="width: 100%; border-collapse: collapse;" cellpadding="0" cellspacing="0">
-          ${renderLinhas(linhasContato)}
-        </table>
-      </div>
-
-      <!-- Respostas da calculadora -->
-      <div style="margin: 0 32px 28px;">
-        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F; margin-bottom: 12px;">
-          Respostas da calculadora
-        </div>
-        <table style="width: 100%; border-collapse: collapse;" cellpadding="0" cellspacing="0">
-          ${renderLinhas(linhasCalculadora)}
-        </table>
-      </div>
+      ${secao("Checklist dos 3 requisitos", checklist)}
+      ${secao("Dados de contato", renderLinhas(linhasContato))}
+      ${secao("Respostas da calculadora", renderLinhas(linhasCalculadora), 28)}
 
       <!-- CTA WhatsApp -->
       <div style="margin: 0 32px 32px; text-align: center;">
