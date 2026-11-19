@@ -29,7 +29,7 @@ export default function Hero() {
           {/* ─────────── Coluna esquerda (3/5 desktop) ─────────── */}
           <div className="md:col-span-3 animate-[var(--animate-slide-up)]">
             <span className="inline-block bg-bordo text-white text-[11px] md:text-xs font-bold uppercase tracking-[0.18em] px-3 py-1.5 rounded">
-              ⚖️ Direito da Saúde · 60 anos de tradição
+              ⚖️ Direito da Saúde · 65 anos de tradição
             </span>
 
             <h1 className="mt-6 font-black text-[36px] md:text-[56px] leading-[1.05] text-ink">
@@ -66,27 +66,28 @@ export default function Hero() {
             </div>
 
             <p className="mt-6 text-sm text-grey">
-              Tayah Advogados · OAB/RJ desde 1965 · Sede em Centro/RJ
+              Tayah Advogados · OAB/RJ desde 1961 · Sede em Centro/RJ
             </p>
           </div>
 
           {/* ─────────── Coluna direita (2/5 desktop) ─────────── */}
           <div className="hidden md:flex md:col-span-2 flex-col gap-4">
-            {/* TODO(Ana): dado ILUSTRATIVO — conferir e citar a fonte
-                antes de publicar (ou ajustar o número). */}
             <CardDado
-              numero="+60%"
-              rotulo="dos planos empresariais de menos de 30 vidas apresentam indícios de falso coletivo"
+              numero="+81%"
+              rotulo="de crescimento nos contratos coletivos de até 5 vidas entre 2019 e 2026"
+              fonte="Fonte: ANS"
               delayMs={300}
             />
             <CardDado
-              numero="Até 50%"
-              rotulo="Reajustes podem chegar a 50% ao ano em contratos irregulares"
+              numero="13,48%"
+              rotulo="foi o reajuste médio em contratos de até 29 vidas em 2026 — mais que o dobro do teto ANS individual de 6,06%"
+              fonte="Fonte: ANS"
               delayMs={500}
             />
             <CardDado
-              numero="Até 36 meses"
-              rotulo="Direito a devolução dos valores pagos a mais"
+              numero="STJ"
+              rotulo="já aplica os índices da ANS aos falsos coletivos reconhecidos judicialmente"
+              fonte="STJ, maio/2026"
               delayMs={700}
             />
           </div>
@@ -131,10 +132,12 @@ function CheckIcon() {
 function CardDado({
   numero,
   rotulo,
+  fonte,
   delayMs,
 }: {
   numero: string;
   rotulo: string;
+  fonte: string;
   delayMs: number;
 }) {
   return (
@@ -149,6 +152,7 @@ function CardDado({
       <div className="mt-2 text-sm md:text-base text-grey font-bold leading-snug">
         {rotulo}
       </div>
+      <div className="mt-3 text-xs text-grey">{fonte}</div>
     </div>
   );
 }

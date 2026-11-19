@@ -506,7 +506,7 @@ function TelaResultado({
           Por que falar com o Tayah Advogados?
         </h3>
         <ul className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <ItemPorQue icone="⚖️" texto="60 anos de tradição" />
+          <ItemPorQue icone="⚖️" texto="65 anos de tradição" />
           <ItemPorQue icone="🩺" texto="Especialistas em Direito da Saúde" />
           <ItemPorQue icone="🤝" texto="Análise sem compromisso" />
         </ul>
