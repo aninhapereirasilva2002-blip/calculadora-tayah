@@ -5,8 +5,8 @@
  *  - Coluna esquerda (60% no desktop): tag de credibilidade,
  *    headline com palavra-chave em vermelho, sub-headline,
  *    3 bullets verdes, 2 CTAs (analisar / falar conosco), prova social.
- *  - Coluna direita (40%, escondida no mobile): 3 cards de "dados duros"
- *    sobre reajustes — entram com slide-left escalonado.
+ *  - Coluna direita (40%, escondida no mobile): 3 cards de dados
+ *    sobre falso coletivo — entram com slide-left escalonado.
  *
  * Animações declaradas em globals.css como --animate-slide-up e
  * --animate-slide-left. Os atrasos dos cards são aplicados via
@@ -33,20 +33,18 @@ export default function Hero() {
             </span>
 
             <h1 className="mt-6 font-black text-[36px] md:text-[56px] leading-[1.05] text-ink">
-              Seu plano subiu mais de 20%? Pode ser{" "}
-              <span className="text-bordo">ABUSIVO.</span>
+              Seu plano empresarial pode ser um{" "}
+              <span className="text-bordo">FALSO COLETIVO</span>
             </h1>
 
             <p className="mt-5 text-base md:text-xl text-[#555] leading-[1.4] max-w-2xl">
-              Calculadora gratuita desenvolvida pela equipe Tayah Advogados.
-              Em 2 minutos você descobre se o reajuste do seu plano de saúde
-              está acima do permitido — e qual o valor estimado de
-              restituição.
+              Descubra em 30 segundos se seu contrato apresenta indícios de
+              irregularidade
             </p>
 
             <ul className="mt-7 space-y-2.5">
-              <BulletCheck texto="Análise técnica em minutos" />
-              <BulletCheck texto="Cálculo de valores estimados de restituição" />
+              <BulletCheck texto="Apenas 4 perguntas rápidas" />
+              <BulletCheck texto="Desenvolvida pela equipe Tayah Advogados" />
               <BulletCheck texto="Sem custo · Sem compromisso" />
             </ul>
 
@@ -55,7 +53,7 @@ export default function Hero() {
                 href="#calculadora"
                 className="inline-block text-center px-8 py-5 rounded-md bg-bordo text-white font-bold text-base md:text-lg shadow-md hover:bg-bordo-dark transition-colors"
               >
-                Analisar meu reajuste agora
+                Fazer o teste agora
               </a>
               <a
                 href={linkConsulta}
@@ -74,19 +72,21 @@ export default function Hero() {
 
           {/* ─────────── Coluna direita (2/5 desktop) ─────────── */}
           <div className="hidden md:flex md:col-span-2 flex-col gap-4">
+            {/* TODO(Ana): dado ILUSTRATIVO — conferir e citar a fonte
+                antes de publicar (ou ajustar o número). */}
             <CardDado
-              numero="6,06%"
-              rotulo="Teto ANS para individuais 2025-2026"
+              numero="+60%"
+              rotulo="dos planos empresariais de menos de 30 vidas apresentam indícios de falso coletivo"
               delayMs={300}
             />
             <CardDado
-              numero="Até 25%"
-              rotulo="Reajuste médio em coletivos"
+              numero="Até 50%"
+              rotulo="Reajustes podem chegar a 50% ao ano em contratos irregulares"
               delayMs={500}
             />
             <CardDado
-              numero="+5.400"
-              rotulo="Reclamações na ANS em 2024"
+              numero="Até 36 meses"
+              rotulo="Direito a devolução dos valores pagos a mais"
               delayMs={700}
             />
           </div>

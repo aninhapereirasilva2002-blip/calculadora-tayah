@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Calculator.tsx — multi-step de 7 perguntas + captura de lead + resultado.
+ * Calculator.tsx — calculadora pública de indícios de FALSO COLETIVO.
  *
- * Estado todo em useState (um objeto `dados` + o passo atual). Cada passo
- * é um pequeno componente inline que recebe apenas o que precisa, para
- * manter o arquivo auto-contido mas legível.
+ * Fluxo: 4 perguntas de múltipla escolha → captura de lead → resultado
+ * (3 cenários). Sem valores em R$ e sem promessa de resultado
+ * (compliance OAB). Regra de pontuação em calculator-falso-coletivo.ts.
  *
  * Paleta (Manual de Identidade Visual Tayah):
- *  - bordo  #9E2A2B → CTAs, barra de progresso, destaques, semáforo forte
+ *  - bordo  #9E2A2B → CTAs, barra de progresso, destaques
  *  - ink    #1A1A1A → títulos e texto principal
  *  - grey   #8A8D8F → bordas, textos auxiliares, placeholders
  *  - offwhite #FAFAF7 → fundo geral
@@ -16,65 +16,40 @@
 
 import { useId, useMemo, useRef, useState } from "react";
 import {
-  type DadosCalculadora,
-  type TipoPlano,
-} from "@/lib/calculator";
-import {
-  calcularResultadoPublico,
-  formatMoedaBR,
-  formatPctBR,
-  type ResultadoPublico,
-} from "@/lib/calculator-publica";
-import { WHATSAPP_TAYAH } from "@/lib/contato";
+  APRESENTACAO,
+  OPCOES_ENTRADA,
+  OPCOES_REAJUSTE,
+  OPCOES_TIPO_PLANO,
+  OPCOES_VIDAS,
+  calcularFalsoColetivo,
+  rotuloDe,
+  type FormaEntrada,
+  type NivelIndicio,
+  type Opcao,
+  type QtdVidas,
+  type ReajusteAlto,
+  type RespostasFalsoColetivo,
+  type ResultadoFalsoColetivo,
+  type TipoPlanoFC,
+} from "@/lib/calculator-falso-coletivo";
+import { linkWhatsapp } from "@/lib/contato";
 
-const OPERADORAS = [
-  "Amil",
-  "Bradesco Saúde",
-  "Unimed-Rio",
-  "Unimed Nacional",
-  "SulAmérica",
-  "Porto Saúde",
-  "Hapvida",
-  "NotreDame Intermédica",
-  "Golden Cross",
-  "Outra",
-] as const;
-
-const MESES = [
-  "Janeiro",
-  "Fevereiro",
-  "Março",
-  "Abril",
-  "Maio",
-  "Junho",
-  "Julho",
-  "Agosto",
-  "Setembro",
-  "Outubro",
-  "Novembro",
-  "Dezembro",
-];
-
-// Tipo que carrega os dados dos passos + os de contato (captura de lead).
-interface EstadoForm extends Partial<DadosCalculadora> {
+interface EstadoForm extends Partial<RespostasFalsoColetivo> {
   nome?: string;
   email?: string;
   whatsapp?: string;
   aceitouPolitica?: boolean;
 }
 
-const ESTADO_INICIAL: EstadoForm = {
-  idadeTitular: 50, // default sugerido pelo brief
-};
-
-const TOTAL_PASSOS = 8;
+const TOTAL_PASSOS = 5; // 4 perguntas + captura de lead
 
 export default function Calculator() {
   const [passo, setPasso] = useState(1);
-  const [dados, setDados] = useState<EstadoForm>(ESTADO_INICIAL);
-  const [resultado, setResultado] = useState<ResultadoPublico | null>(null);
+  const [dados, setDados] = useState<EstadoForm>({});
+  const [resultado, setResultado] = useState<ResultadoFalsoColetivo | null>(
+    null,
+  );
 
-  // Atualiza um campo do estado (imutável).
   function atualizar<K extends keyof EstadoForm>(
     chave: K,
     valor: EstadoForm[K],
@@ -82,39 +57,20 @@ export default function Calculator() {
     setDados((d) => ({ ...d, [chave]: valor }));
   }
 
-  // Validação mínima por passo — controla o botão "Próximo".
   const podeAvancar = useMemo(() => {
     switch (passo) {
       case 1:
         return !!dados.tipoPlano;
       case 2:
-        return !!dados.operadora;
+        return !!dados.vidas;
       case 3:
-        return (
-          typeof dados.mensalidade === "number" &&
-          dados.mensalidade >= 50 &&
-          dados.mensalidade <= 50000
-        );
+        return !!dados.entrada;
       case 4:
-        return (
-          typeof dados.reajustePercentual === "number" &&
-          dados.reajustePercentual >= 0 &&
-          dados.reajustePercentual <= 100
-        );
+        return !!dados.reajuste;
       case 5:
-        return !!dados.mesReajuste && !!dados.anoReajuste;
-      case 6:
         return (
-          typeof dados.idadeTitular === "number" &&
-          dados.idadeTitular >= 0 &&
-          dados.idadeTitular <= 100
-        );
-      case 7:
-        return !!dados.anoContratacao;
-      case 8:
-        return (
-          !!dados.nome &&
-          !!dados.email &&
+          !!dados.nome?.trim() &&
+          !!dados.email?.trim() &&
           !!dados.whatsapp &&
           dados.whatsapp.replace(/\D/g, "").length >= 10 &&
           !!dados.aceitouPolitica
@@ -124,9 +80,8 @@ export default function Calculator() {
     }
   }, [passo, dados]);
 
-  // Guarda contra duplo-disparo da notificação de lead (Sprint 7).
-  // O ref é resetado no `reiniciar()` para que um novo preenchimento
-  // depois de "Refazer análise" também notifique.
+  // Guarda contra duplo-disparo da notificação de lead. Resetado em
+  // reiniciar() para que um novo preenchimento também notifique.
   const leadEnviadoRef = useRef(false);
 
   function avancar() {
@@ -135,13 +90,12 @@ export default function Calculator() {
       setPasso(passo + 1);
       return;
     }
-    // Último passo: calcular resultado completo (diagnóstico + valores em R$).
-    const res = calcularResultadoPublico(dados as DadosCalculadora);
-    // Disparo da notificação por email (fire-and-forget).
-    // A UX do cliente NÃO depende dessa chamada — falhas só vão pro console.
+    const respostas = dados as RespostasFalsoColetivo;
+    const res = calcularFalsoColetivo(respostas);
+    // Fire-and-forget: a UX do cliente não depende do envio do email.
     if (!leadEnviadoRef.current) {
       leadEnviadoRef.current = true;
-      enviarLead(dados, res).catch((err) => {
+      enviarLead(dados, respostas).catch((err) => {
         console.error("Falha ao notificar lead:", err);
       });
     }
@@ -153,26 +107,18 @@ export default function Calculator() {
   }
 
   function reiniciar() {
-    setDados(ESTADO_INICIAL);
+    setDados({});
     setResultado(null);
     setPasso(1);
     leadEnviadoRef.current = false;
   }
 
-  // "Voltar" do dashboard volta ao último passo do formulário (captura
-  // de lead) preservando o que foi preenchido — diferente de reiniciar.
-  function voltarParaUltimoPasso() {
-    setResultado(null);
-  }
-
-  // -------- Renderização --------
   if (resultado) {
     return (
       <TelaResultado
-        resultado={resultado}
-        dados={dados as DadosCalculadora & { nome: string }}
+        nivel={resultado.nivel}
+        dados={dados as RespostasFalsoColetivo & { nome?: string }}
         onReiniciar={reiniciar}
-        onVoltar={voltarParaUltimoPasso}
       />
     );
   }
@@ -189,51 +135,40 @@ export default function Calculator() {
         aria-label={`Passo ${passo} de ${TOTAL_PASSOS}`}
       >
         {passo === 1 && (
-          <Passo1TipoPlano
+          <PerguntaRadio<TipoPlanoFC>
+            titulo="Qual o tipo do seu plano de saúde?"
+            opcoes={OPCOES_TIPO_PLANO}
             valor={dados.tipoPlano}
             onChange={(v) => atualizar("tipoPlano", v)}
+            colunas={2}
           />
         )}
         {passo === 2 && (
-          <Passo2Operadora
-            valor={dados.operadora}
-            onChange={(v) => atualizar("operadora", v)}
+          <PerguntaRadio<QtdVidas>
+            titulo="Quantas pessoas estão nesse contrato?"
+            opcoes={OPCOES_VIDAS}
+            valor={dados.vidas}
+            onChange={(v) => atualizar("vidas", v)}
           />
         )}
         {passo === 3 && (
-          <Passo3Mensalidade
-            valor={dados.mensalidade}
-            onChange={(v) => atualizar("mensalidade", v)}
+          <PerguntaRadio<FormaEntrada>
+            titulo="Como você entrou nesse plano?"
+            opcoes={OPCOES_ENTRADA}
+            valor={dados.entrada}
+            onChange={(v) => atualizar("entrada", v)}
           />
         )}
         {passo === 4 && (
-          <Passo4Reajuste
-            valor={dados.reajustePercentual}
-            onChange={(v) => atualizar("reajustePercentual", v)}
+          <PerguntaRadio<ReajusteAlto>
+            titulo="O reajuste anual costuma ser acima de 15%?"
+            opcoes={OPCOES_REAJUSTE}
+            valor={dados.reajuste}
+            onChange={(v) => atualizar("reajuste", v)}
           />
         )}
         {passo === 5 && (
-          <Passo5MesAno
-            mes={dados.mesReajuste}
-            ano={dados.anoReajuste}
-            onMes={(v) => atualizar("mesReajuste", v)}
-            onAno={(v) => atualizar("anoReajuste", v)}
-          />
-        )}
-        {passo === 6 && (
-          <Passo6Idade
-            valor={dados.idadeTitular ?? 50}
-            onChange={(v) => atualizar("idadeTitular", v)}
-          />
-        )}
-        {passo === 7 && (
-          <Passo7AnoContratacao
-            valor={dados.anoContratacao}
-            onChange={(v) => atualizar("anoContratacao", v)}
-          />
-        )}
-        {passo === 8 && (
-          <Passo8CapturaLead
+          <PassoCapturaLead
             dados={dados}
             onNome={(v) => atualizar("nome", v)}
             onEmail={(v) => atualizar("email", v)}
@@ -301,353 +236,80 @@ function BarraProgresso({
 }
 
 /* ============================================================
-   Passo 1 — Tipo de plano (4 cards radio)
+   Pergunta genérica de múltipla escolha (cards radio).
    ============================================================ */
-function Passo1TipoPlano({
+function PerguntaRadio<T extends string>({
+  titulo,
+  opcoes,
   valor,
   onChange,
+  colunas = 1,
 }: {
-  valor?: TipoPlano;
-  onChange: (v: TipoPlano) => void;
+  titulo: string;
+  opcoes: Opcao<T>[];
+  valor?: T;
+  onChange: (v: T) => void;
+  colunas?: 1 | 2;
 }) {
-  const opcoes: { id: TipoPlano; titulo: string; desc: string }[] = [
-    {
-      id: "individual",
-      titulo: "Individual / Familiar",
-      desc: "Contratado diretamente com a operadora, em seu nome.",
-    },
-    {
-      id: "coletivo_adesao",
-      titulo: "Coletivo por Adesão",
-      desc: "Contratado via associação, sindicato ou entidade de classe.",
-    },
-    {
-      id: "coletivo_empresarial",
-      titulo: "Coletivo Empresarial",
-      desc: "Oferecido pela sua empresa como benefício.",
-    },
-    {
-      id: "nao_sei",
-      titulo: "Não tenho certeza",
-      desc: "Tudo bem — seguiremos com uma análise genérica.",
-    },
-  ];
   return (
-    <Pergunta titulo="Qual o tipo do seu plano de saúde?">
+    <div>
+      <h2 className="font-black text-3xl md:text-4xl text-ink leading-tight mb-6">
+        {titulo}
+      </h2>
       <div
         role="radiogroup"
-        aria-label="Tipo de plano"
-        className="grid grid-cols-1 md:grid-cols-2 gap-3"
+        aria-label={titulo}
+        className={`grid grid-cols-1 gap-3 ${
+          colunas === 2 ? "md:grid-cols-2" : ""
+        }`}
       >
         {opcoes.map((op) => (
           <CardRadio
             key={op.id}
             selecionado={valor === op.id}
             onClick={() => onChange(op.id)}
-            titulo={op.titulo}
+            titulo={op.rotulo}
             desc={op.desc}
           />
         ))}
       </div>
-    </Pergunta>
+    </div>
   );
 }
 
-/* ============================================================
-   Passo 2 — Operadora
-   ============================================================ */
-function Passo2Operadora({
-  valor,
-  onChange,
+function CardRadio({
+  selecionado,
+  onClick,
+  titulo,
+  desc,
 }: {
-  valor?: string;
-  onChange: (v: string) => void;
+  selecionado: boolean;
+  onClick: () => void;
+  titulo: string;
+  desc?: string;
 }) {
-  const id = useId();
   return (
-    <Pergunta titulo="Qual é a sua operadora?">
-      <label htmlFor={id} className="sr-only">
-        Operadora do plano
-      </label>
-      <select
-        id={id}
-        value={valor ?? ""}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-4 py-3 rounded-md border border-grey/50 bg-white text-ink focus:border-bordo"
-      >
-        <option value="">Selecione sua operadora…</option>
-        {OPERADORAS.map((op) => (
-          <option key={op} value={op}>
-            {op}
-          </option>
-        ))}
-      </select>
-    </Pergunta>
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selecionado}
+      onClick={onClick}
+      className={`text-left p-4 rounded-md border-2 transition-all ${
+        selecionado
+          ? "border-bordo bg-bordo/5"
+          : "border-grey/40 bg-white hover:border-bordo/60"
+      }`}
+    >
+      <div className="font-bold text-ink">{titulo}</div>
+      {desc && <div className="mt-1 text-sm text-grey">{desc}</div>}
+    </button>
   );
 }
 
 /* ============================================================
-   Passo 3 — Mensalidade atual (máscara R$)
+   Passo 5 — Captura de lead
    ============================================================ */
-function Passo3Mensalidade({
-  valor,
-  onChange,
-}: {
-  valor?: number;
-  onChange: (v: number | undefined) => void;
-}) {
-  const id = useId();
-  // Formata 123456 → "1.234,56" (centavos implícitos).
-  function formatar(centavos: number): string {
-    const reais = centavos / 100;
-    return reais.toLocaleString("pt-BR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  }
-  const valorCentavos =
-    typeof valor === "number" ? Math.round(valor * 100) : 0;
-  const display = valor === undefined ? "" : formatar(valorCentavos);
-
-  return (
-    <Pergunta titulo="Qual o valor atual da sua mensalidade?">
-      <label htmlFor={id} className="sr-only">
-        Valor da mensalidade em reais
-      </label>
-      <div className="relative">
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-grey font-bold">
-          R$
-        </span>
-        <input
-          id={id}
-          type="text"
-          inputMode="numeric"
-          value={display}
-          onChange={(e) => {
-            const apenasDigitos = e.target.value.replace(/\D/g, "");
-            if (apenasDigitos === "") {
-              onChange(undefined);
-              return;
-            }
-            const centavos = parseInt(apenasDigitos, 10);
-            onChange(centavos / 100);
-          }}
-          placeholder="0,00"
-          className="w-full pl-12 pr-4 py-3 rounded-md border border-grey/50 bg-white text-ink focus:border-bordo text-lg"
-        />
-      </div>
-      <p className="mt-2 text-xs text-grey">
-        Valores aceitos entre R$ 50,00 e R$ 50.000,00.
-      </p>
-    </Pergunta>
-  );
-}
-
-/* ============================================================
-   Passo 4 — Percentual do último reajuste
-   ============================================================ */
-function Passo4Reajuste({
-  valor,
-  onChange,
-}: {
-  valor?: number;
-  onChange: (v: number | undefined) => void;
-}) {
-  const id = useId();
-  return (
-    <Pergunta titulo="Qual o percentual do último reajuste aplicado?">
-      <label htmlFor={id} className="sr-only">
-        Percentual de reajuste
-      </label>
-      <div className="relative">
-        <input
-          id={id}
-          type="number"
-          min={0}
-          max={100}
-          step={0.01}
-          inputMode="decimal"
-          value={valor ?? ""}
-          onChange={(e) => {
-            const v = e.target.value;
-            onChange(v === "" ? undefined : parseFloat(v));
-          }}
-          placeholder="Ex: 24,50"
-          className="w-full pl-4 pr-12 py-3 rounded-md border border-grey/50 bg-white text-ink focus:border-bordo text-lg"
-        />
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-grey font-bold">
-          %
-        </span>
-      </div>
-      <p className="mt-2 text-xs text-grey">
-        Você encontra esse valor no boleto ou no comunicado de reajuste.
-      </p>
-    </Pergunta>
-  );
-}
-
-/* ============================================================
-   Passo 5 — Mês e ano do reajuste
-   ============================================================ */
-function Passo5MesAno({
-  mes,
-  ano,
-  onMes,
-  onAno,
-}: {
-  mes?: number;
-  ano?: number;
-  onMes: (v: number) => void;
-  onAno: (v: number) => void;
-}) {
-  const idMes = useId();
-  const idAno = useId();
-  const anos = [2021, 2022, 2023, 2024, 2025, 2026];
-  return (
-    <Pergunta titulo="Quando o reajuste foi aplicado?">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label
-            htmlFor={idMes}
-            className="block text-sm font-bold text-ink mb-1"
-          >
-            Mês
-          </label>
-          <select
-            id={idMes}
-            value={mes ?? ""}
-            onChange={(e) => onMes(parseInt(e.target.value, 10))}
-            className="w-full px-4 py-3 rounded-md border border-grey/50 bg-white text-ink focus:border-bordo"
-          >
-            <option value="">Selecione…</option>
-            {MESES.map((nome, i) => (
-              <option key={nome} value={i + 1}>
-                {nome}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label
-            htmlFor={idAno}
-            className="block text-sm font-bold text-ink mb-1"
-          >
-            Ano
-          </label>
-          <select
-            id={idAno}
-            value={ano ?? ""}
-            onChange={(e) => onAno(parseInt(e.target.value, 10))}
-            className="w-full px-4 py-3 rounded-md border border-grey/50 bg-white text-ink focus:border-bordo"
-          >
-            <option value="">Selecione…</option>
-            {anos.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-    </Pergunta>
-  );
-}
-
-/* ============================================================
-   Passo 6 — Idade (slider + input espelhado)
-   ============================================================ */
-function Passo6Idade({
-  valor,
-  onChange,
-}: {
-  valor: number;
-  onChange: (v: number) => void;
-}) {
-  const idSlider = useId();
-  const idInput = useId();
-
-  function clampedSet(v: number) {
-    if (Number.isNaN(v)) return;
-    const clamped = Math.max(0, Math.min(100, Math.round(v)));
-    onChange(clamped);
-  }
-
-  return (
-    <Pergunta titulo="Qual a idade do titular do plano?">
-      <div className="flex items-center gap-4">
-        <label htmlFor={idSlider} className="sr-only">
-          Idade (slider)
-        </label>
-        <input
-          id={idSlider}
-          type="range"
-          min={0}
-          max={100}
-          value={valor}
-          onChange={(e) => clampedSet(parseInt(e.target.value, 10))}
-          className="flex-1 accent-bordo"
-        />
-        <label htmlFor={idInput} className="sr-only">
-          Idade (número)
-        </label>
-        <input
-          id={idInput}
-          type="number"
-          min={0}
-          max={100}
-          value={valor}
-          onChange={(e) => clampedSet(parseInt(e.target.value, 10))}
-          className="w-20 px-3 py-2 rounded-md border border-grey/50 bg-white text-ink text-center font-bold focus:border-bordo"
-        />
-        <span className="text-sm text-grey">anos</span>
-      </div>
-    </Pergunta>
-  );
-}
-
-/* ============================================================
-   Passo 7 — Ano de contratação
-   ============================================================ */
-function Passo7AnoContratacao({
-  valor,
-  onChange,
-}: {
-  valor?: number;
-  onChange: (v: number) => void;
-}) {
-  const id = useId();
-  const anos: number[] = [];
-  for (let a = 2026; a >= 1980; a--) anos.push(a);
-  return (
-    <Pergunta titulo="Em que ano você contratou o plano?">
-      <label htmlFor={id} className="sr-only">
-        Ano de contratação
-      </label>
-      <select
-        id={id}
-        value={valor ?? ""}
-        onChange={(e) => onChange(parseInt(e.target.value, 10))}
-        className="w-full px-4 py-3 rounded-md border border-grey/50 bg-white text-ink focus:border-bordo"
-      >
-        <option value="">Selecione o ano…</option>
-        {anos.map((a) => (
-          <option key={a} value={a}>
-            {a}
-          </option>
-        ))}
-      </select>
-      <p className="mt-2 text-xs text-grey">
-        Contratos anteriores a 1999 (pré Lei 9.656/98) seguem regras
-        específicas.
-      </p>
-    </Pergunta>
-  );
-}
-
-/* ============================================================
-   Passo 8 — Captura de lead
-   ============================================================ */
-function Passo8CapturaLead({
+function PassoCapturaLead({
   dados,
   onNome,
   onEmail,
@@ -748,580 +410,169 @@ function Passo8CapturaLead({
 }
 
 /* ============================================================
-   Tela de resultado — dashboard estilo "planilha técnica" (Sprint 5).
-   Cards agregados no topo + restituição em destaque + tabs (tabela
-   mensal e cálculo do indébito) + CTA. Toda a regra está em
-   calculator-publica.ts; aqui é só apresentação.
+   Tela de resultado — 3 cenários. Tom cuidadoso (compliance OAB):
+   sem R$, sem promessa de resultado.
    ============================================================ */
+const ESTILO_NIVEL: Record<
+  NivelIndicio,
+  { fundo: string; borda: string; titulo: string }
+> = {
+  fortes: {
+    fundo: "bg-[#FFF1F1]",
+    borda: "border-bordo/60",
+    titulo: "text-bordo",
+  },
+  alguns: {
+    fundo: "bg-[#FFF8EB]",
+    borda: "border-[#D97706]/60",
+    titulo: "text-[#B45309]",
+  },
+  nenhum: {
+    fundo: "bg-[#F0FAF3]",
+    borda: "border-emerald-600/50",
+    titulo: "text-emerald-800",
+  },
+};
+
 function TelaResultado({
-  resultado,
+  nivel,
   dados,
   onReiniciar,
-  onVoltar,
 }: {
-  resultado: ResultadoPublico;
-  dados: DadosCalculadora & { nome?: string };
+  nivel: NivelIndicio;
+  dados: RespostasFalsoColetivo & { nome?: string };
   onReiniciar: () => void;
-  onVoltar: () => void;
 }) {
-  const [tabAtiva, setTabAtiva] = useState<"tabela" | "calculo">("tabela");
+  const ap = APRESENTACAO[nivel];
+  const estilo = ESTILO_NIVEL[nivel];
 
-  // Mensagem pré-preenchida para o WhatsApp do CTA final.
-  const mensagemWpp = useMemo(() => {
+  // Mensagem pré-preenchida para o WhatsApp (sem valores, sem promessa).
+  const linkWpp = useMemo(() => {
     const linhas = [
-      `Olá! Acabei de fazer a calculadora no site do Tayah Advogados e gostaria de confirmar esses cálculos com a equipe.`,
+      `Olá! Fiz a calculadora de falso coletivo no site do Tayah Advogados e gostaria de uma análise do meu caso.`,
       ``,
-      `Meu nome é ${dados.nome ?? "..."}.`,
-      `Status do meu caso: *${resultado.status}*.`,
+      `Meu nome é ${dados.nome?.trim() || "..."}.`,
+      `Resultado: *${ap.rotulo}*.`,
       ``,
-      `Dados do caso:`,
-      `• Tipo de plano: ${rotuloTipo(dados.tipoPlano)}`,
-      `• Operadora: ${dados.operadora}`,
-      `• Último reajuste: ${dados.reajustePercentual}%`,
-      `• Data do reajuste: ${String(dados.mesReajuste).padStart(2, "0")}/${dados.anoReajuste}`,
-      `• Diferença mensal estimada: ${formatMoedaBR(resultado.diferencaMensal)}`,
-      `• Restituição trienal estimada: ${formatMoedaBR(resultado.valorRestituicaoTrienal)} (${resultado.numMesesRestituicao} meses)`,
+      `Minhas respostas:`,
+      `• Tipo de plano: ${rotuloDe(OPCOES_TIPO_PLANO, dados.tipoPlano)}`,
+      `• Pessoas no contrato: ${rotuloDe(OPCOES_VIDAS, dados.vidas)}`,
+      `• Como entrei no plano: ${rotuloDe(OPCOES_ENTRADA, dados.entrada)}`,
+      `• Reajuste acima de 15%: ${rotuloDe(OPCOES_REAJUSTE, dados.reajuste)}`,
     ];
-    return encodeURIComponent(linhas.join("\n"));
-  }, [dados, resultado]);
+    return linkWhatsapp(linhas.join("\n"));
+  }, [dados, ap.rotulo]);
 
-  const linkWpp = `https://wa.me/${WHATSAPP_TAYAH}?text=${mensagemWpp}`;
-
-  const labelPermitido =
-    resultado.tipoReferencia === "ANS"
-      ? "% Permitido (ANS)"
-      : "% Permitido (referência)";
-
-  function gerarPDF() {
-    if (typeof window !== "undefined") {
-      window.alert("Função em breve.");
-    }
-  }
-
-  // Cor do número do card de status conforme nível.
-  const corStatus =
-    resultado.status === "Abusivo"
-      ? "text-bordo"
-      : resultado.status === "Moderado"
-        ? "text-[#D97706]"
-        : "text-emerald-700";
+  const ctaGrande = nivel === "fortes";
 
   return (
-    <div className="w-full max-w-[1100px] mx-auto bg-offwhite animate-[var(--animate-fade-in)] space-y-4 md:space-y-6">
-      {/* ─── BLOCO 1 — Barra de ações ─── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onVoltar}
-            className="px-4 py-2 rounded-md border border-grey/40 text-ink text-sm font-bold hover:bg-grey/5 transition-colors"
-          >
-            ← Voltar
-          </button>
-          <button
-            type="button"
-            onClick={onReiniciar}
-            className="px-4 py-2 rounded-md border border-grey/40 text-ink text-sm font-bold hover:bg-grey/5 transition-colors"
-          >
-            ↻ Novo Cálculo
-          </button>
+    <div className="w-full max-w-3xl mx-auto animate-[var(--animate-fade-in)] space-y-6">
+      {/* Diagnóstico */}
+      <div
+        className={`rounded-xl border ${estilo.fundo} ${estilo.borda} p-6 md:p-8 shadow-sm`}
+      >
+        <div className="text-4xl md:text-5xl leading-none" aria-hidden="true">
+          {ap.emoji}
         </div>
-        <button
-          type="button"
-          onClick={gerarPDF}
-          className="px-5 py-2.5 rounded-md bg-bordo text-white text-sm font-bold hover:bg-bordo-dark transition-colors"
+        <h3
+          className={`mt-4 font-black text-2xl md:text-3xl leading-tight ${estilo.titulo}`}
         >
-          📄 Gerar Relatório PDF
-        </button>
-      </div>
-
-      {/* ─── BLOCO 2 — 4 cards agregados ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <CardTopo
-          rotulo="TOTAL PAGO"
-          icone="$"
-          valor={formatMoedaBR(resultado.valorTotalPago)}
-          subtitulo="Soma de todas as mensalidades cobradas"
-        />
-        <CardTopo
-          rotulo="TOTAL DEVIDO"
-          icone="$"
-          valor={formatMoedaBR(resultado.valorTotalDevido)}
-          subtitulo="Valor correto com índices permitidos"
-        />
-        <CardTopo
-          rotulo="REVISÃO TOTAL"
-          icone="⚖️"
-          valor={formatMoedaBR(resultado.valorRevisaoTotal)}
-          subtitulo="Diferença no período completo de revisão"
-          corValor="text-[#D97706]"
-          bordaEsquerda="border-l-4 border-[#D97706]"
-        />
-        <CardTopo
-          rotulo="STATUS"
-          icone="⚠️"
-          valor={resultado.status}
-          subtitulo={`${resultado.numReajustesAbusivos} reajuste${
-            resultado.numReajustesAbusivos === 1 ? "" : "s"
-          } abusivo${resultado.numReajustesAbusivos === 1 ? "" : "s"}`}
-          corValor={corStatus}
-          bordaEsquerda="border-l-4 border-bordo"
-        />
-      </div>
-
-      {/* ─── BLOCO 3 — Restituição em destaque ─── */}
-      <div className="rounded-xl bg-[#FFF1F1] border border-bordo/60 p-6 md:p-8 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-center">
-          <div className="md:col-span-3 flex items-start gap-5">
-            <div
-              className="text-5xl md:text-6xl leading-none"
-              aria-hidden="true"
-            >
-              📅
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] font-bold text-grey">
-                Restituição (3 anos)
-              </p>
-              <p className="font-black text-bordo text-[32px] md:text-[48px] leading-none mt-2">
-                {formatMoedaBR(resultado.valorRestituicaoTrienal)}
-              </p>
-              <p className="mt-2 text-sm text-grey">
-                Desde {resultado.mesInicioRestituicao} (
-                {resultado.numMesesRestituicao} mes
-                {resultado.numMesesRestituicao === 1 ? "" : "es"})
-              </p>
-            </div>
-          </div>
-          <div className="md:col-span-2 md:text-right text-sm text-grey leading-relaxed">
-            <p className="font-bold text-ink">Prazo prescricional trienal</p>
-            <p>Art. 206, §3º, V do Código Civil</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── BLOCO 4 — Tabs (tabela / cálculo) ─── */}
-      <div>
-        <div className="flex border-b border-grey/30">
-          <TabBotao
-            ativa={tabAtiva === "tabela"}
-            onClick={() => setTabAtiva("tabela")}
-            label="📊 Tabela Comparativa"
-          />
-          <TabBotao
-            ativa={tabAtiva === "calculo"}
-            onClick={() => setTabAtiva("calculo")}
-            label="🧮 Cálculo do Indébito"
-          />
-        </div>
-
-        {tabAtiva === "tabela" ? (
-          <div className="bg-white rounded-b-xl border border-t-0 border-grey/30 p-5 md:p-6 shadow-sm">
-            <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
-              <div>
-                <h3 className="font-black text-lg md:text-xl text-ink">
-                  Tabela Comparativa Mês a Mês
-                </h3>
-                <p className="text-sm text-grey">
-                  Recálculo histórico do contrato
-                </p>
-              </div>
-              <span className="inline-flex items-center px-3 py-1.5 rounded-md bg-bordo text-white text-xs font-bold uppercase tracking-wider">
-                {resultado.numReajustesAbusivos} reajuste
-                {resultado.numReajustesAbusivos === 1 ? "" : "s"} abusivo
-                {resultado.numReajustesAbusivos === 1 ? "" : "s"} detectado
-                {resultado.numReajustesAbusivos === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              {/* sombra interna inferior sugere "tem mais embaixo" */}
-              <div className="max-h-[600px] overflow-y-auto rounded-md border border-grey/20 [box-shadow:inset_0_-12px_12px_-12px_rgba(0,0,0,0.15)]">
-                <table className="w-full text-sm border-collapse min-w-[820px]">
-                  <thead className="bg-bordo text-white sticky top-0 z-10">
-                    <tr>
-                      <ThR>Mês/Ano</ThR>
-                      <ThR>Valor Cobrado</ThR>
-                      <ThR>Valor Devido</ThR>
-                      <ThR>% Aplicado</ThR>
-                      <ThR>{labelPermitido}</ThR>
-                      <ThR>Dif. Mensal</ThR>
-                      <ThR>Dif. Acumulada</ThR>
-                      <ThR>Status</ThR>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resultado.tabelaMensal.map((l) => {
-                      const linhaAbusiva = l.status === "abusivo";
-                      const aplicadoCor =
-                        l.percentAplicado > l.percentPermitido
-                          ? "text-bordo font-bold"
-                          : "text-emerald-700";
-                      const difCor =
-                        l.diferencaMensal > 0
-                          ? "text-bordo font-bold"
-                          : "text-emerald-700";
-                      return (
-                        <tr
-                          key={`${l.ano}-${l.mes}`}
-                          className={
-                            linhaAbusiva ? "bg-[#FFF5F5]" : "bg-white"
-                          }
-                        >
-                          <TdR>{l.mesAno}</TdR>
-                          <TdR>{formatMoedaBR(l.valorCobrado)}</TdR>
-                          <TdR>{formatMoedaBR(l.valorDevido)}</TdR>
-                          <TdR className={aplicadoCor}>
-                            {formatPctBR(l.percentAplicado)}
-                          </TdR>
-                          <TdR className="text-grey">
-                            {formatPctBR(l.percentPermitido)}
-                          </TdR>
-                          <TdR className={difCor}>
-                            {formatMoedaBR(l.diferencaMensal)}
-                          </TdR>
-                          <TdR
-                            className={
-                              l.diferencaAcumulada > 0
-                                ? "text-bordo font-bold"
-                                : "text-grey"
-                            }
-                          >
-                            {formatMoedaBR(l.diferencaAcumulada)}
-                          </TdR>
-                          <TdR>
-                            {linhaAbusiva ? (
-                              <span title="Reajuste abusivo">⚠️</span>
-                            ) : (
-                              <span title="Dentro do permitido">✅</span>
-                            )}
-                          </TdR>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-white rounded-b-xl border border-t-0 border-grey/30 p-5 md:p-6 shadow-sm space-y-4">
-            <h3 className="font-black text-lg md:text-xl text-ink">
-              Cálculo do Indébito
-            </h3>
-            <CardPasso titulo="PASSO 1 — Identificação do reajuste excessivo">
-              {`Reajuste aplicado pela operadora:    ${formatPctBR(
-                resultado.memoriaCalculo.reajusteAplicado,
-              )}\n${
-                resultado.tipoReferencia === "ANS"
-                  ? "Teto ANS para o período:             "
-                  : "Referência IPCA estimado:            "
-              }${formatPctBR(
-                resultado.memoriaCalculo.tetoANS,
-              )}\nExcesso percentual:                  ${formatPctBR(
-                resultado.memoriaCalculo.excesso,
-              )} (${resultado.memoriaCalculo.excesso.toLocaleString("pt-BR", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })} pontos)`}
-            </CardPasso>
-            <CardPasso titulo="PASSO 2 — Cálculo da mensalidade justa">
-              <span className="block">
-                {`Mensalidade atual:                   ${formatMoedaBR(
-                  resultado.valorMensalidadeAtual,
-                )}\nFórmula:\n  ${
-                  resultado.memoriaCalculo.formulaMensalidadeJusta
-                }\nResultado:`}
-              </span>
-              <span className="block mt-2 text-bordo font-bold text-base md:text-lg">
-                {formatMoedaBR(resultado.memoriaCalculo.mensalidadeJusta)}
-              </span>
-            </CardPasso>
-            <CardPasso titulo="PASSO 3 — Diferença mensal e acumulada">
-              {`Diferença mensal:    ${formatMoedaBR(
-                resultado.valorMensalidadeAtual,
-              )} − ${formatMoedaBR(
-                resultado.memoriaCalculo.mensalidadeJusta,
-              )} = ${formatMoedaBR(
-                resultado.memoriaCalculo.diferencaMensal,
-              )}\nDiferença em 12 meses: ${formatMoedaBR(
-                resultado.memoriaCalculo.diferenca12Meses,
-              )}\nDiferença em 36 meses: ${formatMoedaBR(
-                resultado.memoriaCalculo.diferenca36Meses,
-              )}`}
-            </CardPasso>
-            <CardPasso titulo="PASSO 4 — Aplicação da prescrição trienal">
-              <span className="block font-sans text-ink leading-relaxed text-[13px] md:text-sm">
-                Pelo art. 206, §3º, V do Código Civil, a pretensão de
-                ressarcimento por enriquecimento sem causa prescreve em 3
-                anos. Aplicado ao seu caso, a recuperação cobre os últimos{" "}
-                {resultado.numMesesRestituicao} mes
-                {resultado.numMesesRestituicao === 1 ? "" : "es"}.
-              </span>
-              <span className="block mt-3 text-bordo font-bold text-base md:text-lg">
-                Total estimado: {formatMoedaBR(resultado.valorRestituicaoTrienal)}
-              </span>
-            </CardPasso>
-          </div>
-        )}
-      </div>
-
-      {/* ─── BLOCO 5 — CTA final ─── */}
-      <div className="rounded-xl bg-white border border-grey/30 p-6 md:p-8 shadow-sm">
-        <h3 className="font-black text-xl md:text-2xl text-ink">
-          Quer confirmar esses cálculos com nossa equipe?
+          {ap.titulo}
         </h3>
-        <p className="mt-2 text-grey leading-relaxed">
-          Análise definitiva exige avaliação documental do contrato e dos
-          boletos. Nossa equipe pode revisar gratuitamente e indicar os
-          próximos passos.
+        <p className="mt-4 text-ink text-base md:text-lg leading-relaxed">
+          {ap.texto}
         </p>
+
         <a
           href={linkWpp}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-5 block text-center px-6 py-5 rounded-md bg-[#25D366] text-white font-bold text-base md:text-lg shadow-md hover:bg-[#20bd5a] transition-colors"
+          className={`mt-6 block text-center rounded-md bg-[#25D366] text-white font-bold shadow-md hover:bg-[#20bd5a] transition-colors ${
+            ctaGrande
+              ? "px-6 py-6 text-lg md:text-xl"
+              : "px-6 py-5 text-base md:text-lg"
+          }`}
         >
-          💬 Falar com a equipe Tayah no WhatsApp →
+          💬 {ap.cta}
         </a>
-      </div>
-    </div>
-  );
-}
-
-/* ────────── helpers visuais do dashboard ────────── */
-
-function CardTopo({
-  rotulo,
-  icone,
-  valor,
-  subtitulo,
-  corValor = "text-ink",
-  bordaEsquerda = "",
-}: {
-  rotulo: string;
-  icone: string;
-  valor: string;
-  subtitulo: string;
-  corValor?: string;
-  bordaEsquerda?: string;
-}) {
-  return (
-    <div
-      className={`rounded-xl bg-white border border-grey/20 ${bordaEsquerda} shadow-sm p-5 md:p-6 transition-shadow hover:shadow-md`}
-    >
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-grey">
-          {rotulo}
+        <p className="mt-3 text-center text-sm text-grey">
+          WhatsApp (21) 99891-7757
         </p>
-        <span className="text-grey text-lg leading-none" aria-hidden="true">
-          {icone}
-        </span>
       </div>
-      <p
-        className={`font-bold text-2xl md:text-[28px] leading-tight ${corValor}`}
-      >
-        {valor}
+
+      {/* Por que falar com o Tayah */}
+      <div className="rounded-xl bg-white border border-grey/30 p-6 md:p-8 shadow-sm">
+        <h3 className="font-black text-xl md:text-2xl text-ink">
+          Por que falar com o Tayah Advogados?
+        </h3>
+        <ul className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <ItemPorQue icone="⚖️" texto="60 anos de tradição" />
+          <ItemPorQue icone="🩺" texto="Especialistas em Direito da Saúde" />
+          <ItemPorQue icone="🤝" texto="Análise sem compromisso" />
+        </ul>
+      </div>
+
+      <p className="text-xs text-grey leading-relaxed text-center max-w-2xl mx-auto">
+        Este resultado é uma triagem preliminar e informativa, baseada apenas
+        nas respostas fornecidas. Não constitui parecer jurídico nem garantia
+        de resultado. A confirmação depende de análise individual do contrato
+        e dos documentos.
       </p>
-      <p className="mt-2 text-xs text-grey leading-snug">{subtitulo}</p>
-    </div>
-  );
-}
 
-function TabBotao({
-  ativa,
-  onClick,
-  label,
-}: {
-  ativa: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex-1 px-4 py-3 text-sm md:text-base font-bold transition-colors border-b-2 ${
-        ativa
-          ? "bg-white text-ink border-bordo"
-          : "bg-[#F0F0F0] text-grey border-transparent hover:text-ink"
-      } first:rounded-tl-xl last:rounded-tr-xl`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function CardPasso({
-  titulo,
-  children,
-}: {
-  titulo: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="rounded-md bg-[#F5F5F5] border border-grey/20 p-4 md:p-5"
-      // Padrão "quadriculado" sutil que reforça a vibe de planilha técnica.
-      style={{
-        backgroundImage:
-          "linear-gradient(rgba(138,141,143,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(138,141,143,0.08) 1px, transparent 1px)",
-        backgroundSize: "24px 24px",
-      }}
-    >
-      <p className="font-bold text-ink mb-3 text-sm md:text-base">{titulo}</p>
-      <div className="font-mono text-[12px] md:text-sm text-ink leading-relaxed whitespace-pre-wrap">
-        {children}
+      <div className="text-center">
+        <button
+          type="button"
+          onClick={onReiniciar}
+          className="px-4 py-2 rounded-md border border-grey/40 text-ink text-sm font-bold hover:bg-grey/5 transition-colors"
+        >
+          ↻ Refazer análise
+        </button>
       </div>
     </div>
   );
 }
 
-function ThR({ children }: { children: React.ReactNode }) {
+function ItemPorQue({ icone, texto }: { icone: string; texto: string }) {
   return (
-    <th className="px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider">
-      {children}
-    </th>
+    <li className="flex items-center gap-3 rounded-md bg-offwhite border border-grey/20 p-4">
+      <span className="text-2xl leading-none" aria-hidden="true">
+        {icone}
+      </span>
+      <span className="font-bold text-ink leading-snug">{texto}</span>
+    </li>
   );
-}
-
-function TdR({
-  children,
-  className = "",
-  colSpan,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  colSpan?: number;
-}) {
-  return (
-    <td
-      colSpan={colSpan}
-      className={`px-3 py-2.5 align-middle border-b border-grey/15 ${className}`}
-    >
-      {children}
-    </td>
-  );
-}
-
-/* ============================================================
-   Componentes utilitários internos
-   ============================================================ */
-function Pergunta({
-  titulo,
-  children,
-}: {
-  titulo: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <h2 className="font-black text-3xl md:text-4xl text-ink leading-tight mb-6">
-        {titulo}
-      </h2>
-      {children}
-    </div>
-  );
-}
-
-function CardRadio({
-  selecionado,
-  onClick,
-  titulo,
-  desc,
-}: {
-  selecionado: boolean;
-  onClick: () => void;
-  titulo: string;
-  desc: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selecionado}
-      onClick={onClick}
-      className={`text-left p-4 rounded-md border-2 transition-all ${
-        selecionado
-          ? "border-bordo bg-bordo/5"
-          : "border-grey/40 bg-white hover:border-bordo/60"
-      }`}
-    >
-      <div className="font-bold text-ink mb-1">{titulo}</div>
-      <div className="text-sm text-grey">{desc}</div>
-    </button>
-  );
-}
-
-function rotuloTipo(t: TipoPlano): string {
-  switch (t) {
-    case "individual":
-      return "Individual / Familiar";
-    case "coletivo_adesao":
-      return "Coletivo por Adesão";
-    case "coletivo_empresarial":
-      return "Coletivo Empresarial";
-    case "nao_sei":
-      return "Não informado";
-  }
 }
 
 /**
- * Envia o preenchimento da calculadora para /api/lead, que dispara
- * uma notificação por email para o time. Fire-and-forget: a tela de
- * resultado é exibida independentemente do retorno; falhas só vão
- * pro console (não bloqueiam a UX do cliente).
- *
- * Usa `valorRevisaoTotal` (= diferença mensal × 36) como
- * "valorEstimado em 36 meses" no payload — bate com o card REVISÃO
- * TOTAL do dashboard.
+ * Envia as respostas + contato para /api/lead, que recalcula a
+ * pontuação no servidor e dispara o email para a equipe.
+ * Fire-and-forget: falhas só vão pro console.
  */
 async function enviarLead(
   form: EstadoForm,
-  resultado: ResultadoPublico,
+  respostas: RespostasFalsoColetivo,
 ): Promise<void> {
   const payload = {
-    nome: form.nome ?? "",
-    email: form.email ?? "",
+    nome: form.nome?.trim() ?? "",
+    email: form.email?.trim() ?? "",
     whatsapp: form.whatsapp ?? "",
-    tipoPlano: form.tipoPlano ? rotuloTipo(form.tipoPlano) : "—",
-    operadora: form.operadora ?? "—",
-    mensalidade: typeof form.mensalidade === "number" ? form.mensalidade : 0,
-    reajuste:
-      typeof form.reajustePercentual === "number"
-        ? form.reajustePercentual
-        : 0,
-    mesAno:
-      form.mesReajuste && form.anoReajuste
-        ? `${String(form.mesReajuste).padStart(2, "0")}/${form.anoReajuste}`
-        : "—",
-    idade:
-      typeof form.idadeTitular === "number" ? form.idadeTitular : 0,
-    anoContratacao:
-      typeof form.anoContratacao === "number" ? form.anoContratacao : 0,
-    diagnostico: {
-      nivel: resultado.nivel,
-      sinalizacoes: resultado.sinalizacoes,
-      valorEstimado: resultado.valorRevisaoTotal,
+    respostas: {
+      tipoPlano: respostas.tipoPlano,
+      vidas: respostas.vidas,
+      entrada: respostas.entrada,
+      reajuste: respostas.reajuste,
     },
   };
 
-  console.log("[LEAD] Enviando para /api/lead:", payload);
-  try {
-    const res = await fetch("/api/lead", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      // Mantém pendente mesmo se a aba ficar em background.
-      keepalive: true,
-    });
-    console.log("[LEAD] Resposta:", res.status);
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`POST /api/lead falhou (${res.status}): ${txt}`);
-    }
-  } catch (error) {
-    console.error("[LEAD] Erro ao enviar:", error);
-    throw error;
+  const res = await fetch("/api/lead", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    // Mantém pendente mesmo se a aba ficar em background.
+    keepalive: true,
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`POST /api/lead falhou (${res.status}): ${txt}`);
   }
 }

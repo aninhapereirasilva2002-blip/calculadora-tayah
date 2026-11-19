@@ -1,13 +1,14 @@
 /**
- * /api/lead — recebe o preenchimento da calculadora pública e dispara
- * uma notificação por email para o endereço configurado em
- * EMAIL_DESTINO via Resend.
+ * /api/lead — recebe o preenchimento da calculadora pública de
+ * FALSO COLETIVO e dispara uma notificação por email para o endereço
+ * configurado em EMAIL_DESTINO via Resend.
  *
- * Fluxo (Sprint 7):
- *  1. Cliente preenche os 7 passos + dados de contato e clica
+ * Fluxo:
+ *  1. Cliente responde as 4 perguntas + dados de contato e clica
  *     "Ver meu diagnóstico"
- *  2. Calculator.tsx faz POST para esta rota com todos os dados
- *  3. Aqui validamos com Zod e enviamos o HTML por Resend
+ *  2. Calculator.tsx faz POST para esta rota com as respostas (ids)
+ *  3. Aqui validamos com Zod, RECALCULAMOS a pontuação no servidor
+ *     (não confiamos em pontos vindos do cliente) e enviamos via Resend
  *  4. A UX do cliente NÃO depende dessa chamada — falhas são logadas
  *     no console mas não bloqueiam a tela de resultado.
  *
@@ -15,29 +16,39 @@
  *  - rate-limit por IP (KV/Redis ou middleware)
  *  - honeypot/captcha leve no formulário
  *  - validação de origem (Origin/Referer)
- * Não implementado nesta sprint para manter o escopo.
  */
 import { z } from "zod";
 import { Resend } from "resend";
+import {
+  APRESENTACAO,
+  OPCOES_ENTRADA,
+  OPCOES_REAJUSTE,
+  OPCOES_TIPO_PLANO,
+  OPCOES_VIDAS,
+  PONTUACAO_MAXIMA,
+  calcularFalsoColetivo,
+  rotuloDe,
+  type NivelIndicio,
+  type ResultadoFalsoColetivo,
+} from "@/lib/calculator-falso-coletivo";
 
 // O SDK da Resend usa primitivos do Node; força o runtime correto.
 export const runtime = "nodejs";
 
 const PayloadSchema = z.object({
-  nome: z.string().min(1),
-  email: z.string().email(),
+  nome: z.string().trim().min(1),
+  email: z.string().trim().email(),
   whatsapp: z.string().min(1),
-  tipoPlano: z.string().min(1),
-  operadora: z.string().min(1),
-  mensalidade: z.number().nonnegative(),
-  reajuste: z.number(),
-  mesAno: z.string().min(1),
-  idade: z.number().int().nonnegative(),
-  anoContratacao: z.number().int(),
-  diagnostico: z.object({
-    nivel: z.enum(["forte", "moderado", "fraco"]),
-    sinalizacoes: z.array(z.string()),
-    valorEstimado: z.number().nonnegative(),
+  respostas: z.object({
+    tipoPlano: z.enum([
+      "coletivo_empresarial",
+      "coletivo_adesao",
+      "individual",
+      "nao_sei",
+    ]),
+    vidas: z.enum(["so_eu", "de_2_a_29", "30_ou_mais"]),
+    entrada: z.enum(["clt", "abriu_empresa", "associou_entidade", "outro"]),
+    reajuste: z.enum(["sim", "nao", "varia"]),
   }),
 });
 
@@ -84,6 +95,7 @@ export async function POST(request: Request) {
   }
 
   const dados = parsed.data;
+  const resultado = calcularFalsoColetivo(dados.respostas);
   const resend = new Resend(apiKey);
 
   try {
@@ -91,8 +103,8 @@ export async function POST(request: Request) {
       // Domínio padrão do Resend, funciona sem configuração de DNS.
       from: "onboarding@resend.dev",
       to: destino,
-      subject: montarAssunto(dados),
-      html: montarEmailHTML(dados),
+      subject: montarAssunto(dados, resultado),
+      html: montarEmailHTML(dados, resultado),
     });
     if (error) {
       console.error("[/api/lead] Resend retornou erro:", error);
@@ -118,25 +130,15 @@ export async function POST(request: Request) {
 // Composição do email
 // ============================================================
 
-const APRESENTACAO_NIVEL: Record<
-  Payload["diagnostico"]["nivel"],
-  { emoji: string; label: string; cor: string }
-> = {
-  forte: { emoji: "🟥", label: "Forte", cor: "#9E2A2B" },
-  moderado: { emoji: "🟨", label: "Moderado", cor: "#D97706" },
-  fraco: { emoji: "🟩", label: "Fraco", cor: "#16A34A" },
+const COR_NIVEL: Record<NivelIndicio, string> = {
+  fortes: "#9E2A2B",
+  alguns: "#D97706",
+  nenhum: "#16A34A",
 };
 
-function montarAssunto(d: Payload): string {
-  const a = APRESENTACAO_NIVEL[d.diagnostico.nivel];
-  return `🔔 Novo lead — ${d.nome} — ${a.emoji} ${a.label}`;
-}
-
-function formatarMoeda(n: number): string {
-  return n.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
+function montarAssunto(d: Payload, r: ResultadoFalsoColetivo): string {
+  const a = APRESENTACAO[r.nivel];
+  return `🔔 Novo lead (Falso Coletivo) — ${d.nome} — ${a.emoji} ${a.rotulo}`;
 }
 
 function formatarDataHora(): string {
@@ -162,21 +164,19 @@ function montarLinkWhatsapp(d: Payload): string {
   const primeiroNome = d.nome.trim().split(/\s+/)[0];
   const mensagem =
     `Olá ${primeiroNome}, sou do escritório Tayah Advogados. ` +
-    `Recebi o preenchimento da sua análise pela nossa calculadora ` +
+    `Recebi suas respostas na nossa calculadora de falso coletivo ` +
     `e gostaria de conversar sobre o seu caso.`;
   return `https://wa.me/55${limpo}?text=${encodeURIComponent(mensagem)}`;
 }
 
-function montarEmailHTML(d: Payload): string {
-  const nivel = APRESENTACAO_NIVEL[d.diagnostico.nivel];
+function montarEmailHTML(d: Payload, r: ResultadoFalsoColetivo): string {
+  const ap = APRESENTACAO[r.nivel];
+  const cor = COR_NIVEL[r.nivel];
   const linkWpp = montarLinkWhatsapp(d);
   const dataHora = formatarDataHora();
 
   const linhasContato = [
-    {
-      rotulo: "Nome",
-      valor: escapeHTML(d.nome),
-    },
+    { rotulo: "Nome", valor: escapeHTML(d.nome) },
     {
       rotulo: "Email",
       valor: `<a href="mailto:${escapeHTML(d.email)}" style="color: #9E2A2B; text-decoration: none;">${escapeHTML(d.email)}</a>`,
@@ -187,20 +187,24 @@ function montarEmailHTML(d: Payload): string {
     },
   ];
 
+  const resp = d.respostas;
   const linhasCalculadora = [
-    { rotulo: "Tipo de plano", valor: escapeHTML(d.tipoPlano) },
-    { rotulo: "Operadora", valor: escapeHTML(d.operadora) },
-    { rotulo: "Mensalidade atual", valor: formatarMoeda(d.mensalidade) },
     {
-      rotulo: "Reajuste aplicado",
-      valor: `${d.reajuste.toLocaleString("pt-BR", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })}%`,
+      rotulo: "1. Tipo do plano",
+      valor: escapeHTML(rotuloDe(OPCOES_TIPO_PLANO, resp.tipoPlano)),
     },
-    { rotulo: "Mês/ano do reajuste", valor: escapeHTML(d.mesAno) },
-    { rotulo: "Idade do titular", valor: `${d.idade} anos` },
-    { rotulo: "Plano contratado em", valor: String(d.anoContratacao) },
+    {
+      rotulo: "2. Pessoas no contrato",
+      valor: escapeHTML(rotuloDe(OPCOES_VIDAS, resp.vidas)),
+    },
+    {
+      rotulo: "3. Forma de entrada",
+      valor: escapeHTML(rotuloDe(OPCOES_ENTRADA, resp.entrada)),
+    },
+    {
+      rotulo: "4. Reajuste acima de 15%",
+      valor: escapeHTML(rotuloDe(OPCOES_REAJUSTE, resp.reajuste)),
+    },
   ];
 
   const renderLinhas = (linhas: Array<{ rotulo: string; valor: string }>) =>
@@ -213,16 +217,6 @@ function montarEmailHTML(d: Payload): string {
         </tr>`,
       )
       .join("");
-
-  const sinalizacoes =
-    d.diagnostico.sinalizacoes.length > 0
-      ? d.diagnostico.sinalizacoes
-          .map(
-            (s) =>
-              `<li style="margin-bottom: 6px; color: #1A1A1A; line-height: 1.5;">${escapeHTML(s)}</li>`,
-          )
-          .join("")
-      : '<li style="color: #8A8D8F;">Nenhuma sinalização específica.</li>';
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -243,20 +237,20 @@ function montarEmailHTML(d: Payload): string {
           Novo lead recebido
         </div>
         <div style="font-size: 13px; margin-top: 8px; opacity: 0.85;">
-          Calculadora pública · ${escapeHTML(dataHora)}
+          Calculadora Falso Coletivo · ${escapeHTML(dataHora)}
         </div>
       </div>
 
-      <!-- Card destaque (diagnóstico + valor estimado) -->
+      <!-- Card destaque (diagnóstico + pontuação) -->
       <div style="margin: 24px 32px; padding: 20px 24px; background: #F5F5F5; border-radius: 8px;">
-        <div style="font-size: 28px; font-weight: 900; color: ${nivel.cor}; line-height: 1.2;">
-          ${nivel.emoji} ${nivel.label}
+        <div style="font-size: 24px; font-weight: 900; color: ${cor}; line-height: 1.25;">
+          ${ap.emoji} ${escapeHTML(ap.rotulo)}
         </div>
         <div style="margin-top: 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F;">
-          Valor estimado em 36 meses
+          Pontuação
         </div>
         <div style="margin-top: 4px; font-size: 22px; font-weight: 700; color: #1A1A1A;">
-          ${formatarMoeda(d.diagnostico.valorEstimado)}
+          ${r.pontos} / ${PONTUACAO_MAXIMA} pontos
         </div>
       </div>
 
@@ -270,24 +264,14 @@ function montarEmailHTML(d: Payload): string {
         </table>
       </div>
 
-      <!-- Dados da calculadora -->
-      <div style="margin: 0 32px 24px;">
+      <!-- Respostas da calculadora -->
+      <div style="margin: 0 32px 28px;">
         <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F; margin-bottom: 12px;">
-          Dados da calculadora
+          Respostas da calculadora
         </div>
         <table style="width: 100%; border-collapse: collapse;" cellpadding="0" cellspacing="0">
           ${renderLinhas(linhasCalculadora)}
         </table>
-      </div>
-
-      <!-- Sinalizações -->
-      <div style="margin: 0 32px 28px;">
-        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #8A8D8F; margin-bottom: 12px;">
-          Sinalizações detectadas
-        </div>
-        <ul style="margin: 0; padding-left: 20px; font-size: 14px;">
-          ${sinalizacoes}
-        </ul>
       </div>
 
       <!-- CTA WhatsApp -->

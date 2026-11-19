@@ -12,9 +12,9 @@ const lato = Lato({
 });
 
 export const metadata: Metadata = {
-  title: "Tayah Advogados — Calculadora de Revisão de Reajuste de Plano de Saúde",
+  title: "Tayah Advogados — Seu plano empresarial pode ser um Falso Coletivo?",
   description:
-    "Descubra se o reajuste do seu plano de saúde tem indícios de abusividade. Ferramenta informativa gratuita do escritório Tayah Advogados.",
+    "Descubra em 30 segundos se seu plano de saúde empresarial apresenta indícios de falso coletivo. Ferramenta informativa gratuita do escritório Tayah Advogados.",
 };
 
 export default function RootLayout({
